@@ -30,14 +30,12 @@ def line_segments_intersect(seg1, seg2):
     o3 = orientation(seg2, p1)
     o4 = orientation(seg2, p2)
 
-    if o1 and o2 and o3 and o4 and o1 != o2 and o3 != o4:
-        return True
-    if o1 == 0 and colinear_intersect(seg1, p3):
-        return True
-    if o2 == 0 and colinear_intersect(seg1, p4):
-        return True
-    if o3 == 0 and colinear_intersect(seg2, p1):
-        return True
-    if o4 == 0 and colinear_intersect(seg2, p2):
-        return True
-    return False
+    if o1 == 0:
+        return colinear_intersect(seg1, p3)
+    if o2 == 0:
+        return colinear_intersect(seg1, p4)
+    if o3 == 0:
+        return colinear_intersect(seg2, p1)
+    if o4 == 0:
+        return colinear_intersect(seg2, p2)
+    return o1 != o2 and o3 != o4
