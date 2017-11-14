@@ -18,6 +18,9 @@ def test_does_intersect():
     assert line_segments_intersect(ls1, ls2)
     ls3 = LineSegment(Point(0, 0), Point(10, 0))
     assert line_segments_intersect(ls1, ls3)
+    ls4 = LineSegment(Point(1, 6), Point(6, 1))
+    ls5 = LineSegment(Point(2, 3), Point(9, 4))
+    assert line_segments_intersect(ls4, ls5)
 
 def test_colinear_intersect():
     ls = LineSegment(Point(0, 0), Point(10, 0))
@@ -30,3 +33,6 @@ def test_does_not_intersect():
     ls1 = LineSegment(Point(-10, 0), Point(10, 0))
     ls2 = LineSegment(Point(10, 0), Point(20, 0))
     assert not line_segments_intersect(ls1, ls2)
+    ls3 = LineSegment(Point(1, 6), Point(5, 7))
+    ls4 = LineSegment(Point(5, 7), Point(9, 4))
+    assert not line_segments_intersect(ls3, ls4)

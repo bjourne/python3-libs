@@ -22,13 +22,15 @@ def colinear_intersect(seg, p):
         p.y >= min(seg.p1.y, seg.p2.y)
 
 def line_segments_intersect(seg1, seg2):
+    '''Determine whether the open line segments seg1 and seg2
+    intersects.'''
     (p1, p2), (p3, p4) = seg1, seg2
     o1 = orientation(seg1, p3)
     o2 = orientation(seg1, p4)
     o3 = orientation(seg2, p1)
     o4 = orientation(seg2, p2)
 
-    if o1 != o2 and o3 != o4:
+    if o1 and o2 and o3 and o4 and o1 != o2 and o3 != o4:
         return True
     if o1 == 0 and colinear_intersect(seg1, p3):
         return True
