@@ -1,6 +1,8 @@
 # Copyright (C) 2017 Björn Lindqvist
 from bisect import bisect_left, insort
 from collections import namedtuple
+from heapq import heappop, heappush
+from itertools import groupby
 
 Point = namedtuple('Point', ['x', 'y'])
 
@@ -88,8 +90,6 @@ class search:
             return i
         raise ValueError
 
-from itertools import groupby
-
 def segments_intersect_fast(segments):
     def x1_key(seg):
         return seg.p1.x
@@ -118,18 +118,17 @@ def segments_intersect_fast(segments):
 
     # No handling for arbitrary colinear segments. They look way
     # harder to handle.
-    end_points = []
+
+    heap = []
     for i, seg in enumerate(segments):
         x1, y1, x2, y2 = seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y
         is_right = x1 >= x2
-        end_points.append((x1, i, is_right))
-        end_points.append((x2, i, not is_right))
-    end_points = sorted(end_points)
+        heappush(heap, (x1, i, is_right))
+        heappush(heap, (x2, i, not is_right))
 
     tree = search()
-    for _, label, is_right in end_points:
-        seg = segments[label]
-        print(seg, is_right, tree.values)
+    while heap:
+        _, label, is_right = heappop(heap)
         if not is_right:
             tree.insert(label)
             for n in tree.find_neighbors(label):
