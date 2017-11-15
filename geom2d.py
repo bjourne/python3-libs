@@ -4,10 +4,6 @@ from collections import namedtuple
 Point = namedtuple('Point', ['x', 'y'])
 LineSegment = namedtuple('LineSegment', ['p1', 'p2'])
 
-def orientation(p, q, r):
-    d = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y)
-    return 1 if d > 0 else (-1 if d < 0 else 0)
-
 def orientation(seg, r):
     p = seg.p1
     q = seg.p2
