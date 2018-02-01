@@ -1,34 +1,62 @@
-graph = {
-    '1': ['2', '3', '4'],
-    '2': ['5', '6'],
-    '5': ['9', '10'],
-    '4': ['7', '8'],
-    '7': ['11', '12'],
-    '12' : ['1']
-}
+from collections import deque
+from itertools import islice
 
-def bfs(graph, start, end):
-    # maintain a queue of paths
-    queue = []
-    # push the first path into the queue
-    queue.append([start])
+def bfs(graph, start, accepting, rep_count):
+    queue = deque([[(None, start)]])
+    seen = set()
     while queue:
-        # get the first path from the queue
-        path = queue.pop(0)
-        # get the last node from the path
-        node = path[-1]
-        # path found
-        if node == end:
-            return path
-        adjacents = graph.get(node, [])
-        if not adjacents:
-            print(path)
-        for adjacent in adjacents:
-            new_path = list(path)
-            if not adjacent in new_path:
-                new_path.append(adjacent)
-                queue.append(new_path)
-            else:
-                print('Cycle %s' % new_path)
+        path = queue.popleft()
+        node = path[-1][1]
+        if node in accepting:
+            tpath = tuple(path)
+            if len(tpath) > 1 and tpath not in seen:
+                seen.add(tpath)
+                yield tpath
 
-print(bfs(graph, '1', '99'))
+        adjacents = graph.get(node, [])
+        for trans in adjacents:
+            if path.count(trans) < rep_count:
+                new_path = list(path)
+                new_path.append(trans)
+                queue.append(new_path)
+
+def add_transitions(trans, chars, to):
+    if len(chars) == 1:
+        trans.append((chars, to))
+    else:
+        for x in range(ord(chars[0]), ord(chars[-1])):
+            trans.append((chr(x), to))
+
+def read_ints_line():
+    return [int(x) for x in input().split()]
+
+def read_dfa():
+    graph = {}
+    _, start = read_ints_line()
+    accepting = tuple(read_ints_line()[1:])
+    trans_count = read_ints_line()[0]
+    for x in range(trans_count):
+        from_, to, chars = input().split()
+        from_ = int(from_)
+        to = int(to)
+
+        if from_ not in graph:
+            graph[from_] = []
+        trans = graph[from_]
+        add_transitions(trans, chars, to)
+    path_count = read_ints_line()[0]
+    return graph, start, accepting, path_count
+
+def main():
+    graph, start, accepting, path_count = read_dfa()
+    gen = bfs(graph, start, accepting, rep_count = 50)
+    paths = list(islice(gen, path_count))
+    print(len(paths))
+    for path in paths:
+        s = ''.join(ch for (ch, _) in path[1:])
+        print(s)
+
+if __name__ == '__main__':
+    main()
+    # import cProfile
+    # cProfile.run('main()')
