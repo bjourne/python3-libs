@@ -1,6 +1,12 @@
 from collections import deque
 from itertools import islice, product
 
+def generate_paths(path_gen):
+    for path_pattern in path_gen:
+        gens = [g[1] for g in path_pattern[1:]]
+        for path in product(*gens):
+            yield ''.join(path)
+
 def bfs(graph, start, accepting):
     queue = deque([[(start, None)]])
     while queue:
@@ -10,13 +16,11 @@ def bfs(graph, start, accepting):
             yield path
         adjacents = graph.get(node, {})
         for item in adjacents.items():
-            new_path = list(path)
-            new_path.append(item)
-            queue.append(new_path)
+            queue.append(path + [item])
 
 def add_transitions(trans, chars, to):
     if to not in trans:
-        trans[to] = ""
+        trans[to] = ''
     char_range = range(ord(chars[0]), ord(chars[-1]) + 1)
     extra_chars = ''.join(chr(o) for o in char_range)
     trans[to] = trans[to] + extra_chars
@@ -40,20 +44,11 @@ def read_dfa():
     path_count = read_ints_line()[0]
     return graph, start, accepting, path_count
 
-def generate_paths(path_gen):
-    for path_pattern in path_gen:
-        # print(path_pattern)
-        gens = [g[1] for g in path_pattern[1:]]
-        if gens:
-            for path in product(*gens):
-                yield ''.join(path)
-
 def main():
     graph, start, accepting, path_count = read_dfa()
     gen = bfs(graph, start, accepting)
     paths = islice(generate_paths(gen), path_count)
     paths = list(paths)
-
     print(len(paths))
     for path in paths:
         print(path)
