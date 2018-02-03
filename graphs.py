@@ -36,6 +36,9 @@ def read_ints_line():
 def read_dfa():
     state_count, start = read_ints_line()
     accepting = set(read_ints_line()[1:])
+    accept_mask = [x in accepting for x in range(state_count)]
+    print(accept_mask)
+
     trans_count = read_ints_line()[0]
     G = [{} for x in range(state_count)]
     for x in range(trans_count):
