@@ -30,8 +30,10 @@ from numpy import (arange, array,
                    concatenate,
                    linspace,
                    ones, unique)
-from numpy.random import randn
+from numpy.random import randn, seed
 from sklearn.svm import SVR
+
+seed(2337)
 
 def generate_samples(n):
     c1 = [-1, -0.5]
@@ -53,8 +55,8 @@ def plot_result(svm, X, Y):
         inp = [[x, y]]
         return svm.predict(inp)[0]
 
-    xg = linspace(-5, 5)
-    yg = linspace(-4, 4)
+    xg = linspace(-3, 3)
+    yg = linspace(-2, 2)
 
     grid = array([[do_predict(x, y) for x in xg] for y in yg])
     contour(xg, yg, grid, (-1.0, 0.0, 1.0),
@@ -72,18 +74,18 @@ if __name__ == '__main__':
     mng.window.showMaximized()
 
     X, Y = generate_samples(40)
-    svm = SVM('rbf',
-              C = 1,
-              degree = 2, coef0 = 0.0,
+    svm = SVM('linear',
+              C = 10.0,
+              degree = 1, coef0 = 1.0,
               gamma = 5.0)
     svm.fit(X, Y)
     plot_result(svm, X, Y)
     savefig('mine.png')
     clf()
 
-    svm = SVR(kernel = 'rbf',
-              C = 1,
-              degree = 2, coef0 = 0,
+    svm = SVR(kernel = 'linear',
+              C = 10.0,
+              degree = 3, coef0 = 0,
               gamma = 5.0)
     svm.fit(X, Y)
     plot_result(svm, X, Y)

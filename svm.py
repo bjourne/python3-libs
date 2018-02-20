@@ -3,7 +3,7 @@
 # A simple Support Vector Machine written by me, with the help of a
 # lot of tutorials!
 from math import exp
-from numpy import array, dot, multiply, zeros
+from numpy import array, dot, multiply, nonzero, zeros
 from numpy.linalg import norm
 from scipy.optimize import minimize
 
@@ -50,17 +50,14 @@ class SVM:
                        constraints = constraints)
         A = ret['x']
 
-        # We select one ARBITRARY support vector
-        sv_idxs = [i for (i, a) in enumerate(A) if abs(a) > 0.000001]
-        sv_idx = sv_idxs[0]
-
-        sv_x = X[sv_idx]
-        sv_y = Y[sv_idx]
-
+        # Select the non-zero support vectors
+        indices = [i for (i, a) in enumerate(A) if a > 0.000001]
+        A = A[indices]
+        Y = Y[indices]
+        X = X[indices]
         self.AYX = list(zip(multiply(A, Y), X))
-
-        self.b = sum(ay * self.kfun(sv_x, x)
-                     for (ay, x) in self.AYX) - sv_y
+        self.b = sum(ay * self.kfun(X[0], x)
+                     for (ay, x) in self.AYX) - Y[0]
 
     def predict_point(self, x):
         return sum(ay * self.kfun(x, xi)
