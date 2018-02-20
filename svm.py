@@ -28,7 +28,7 @@ class SVM:
         classes and A the alphas.
         """
         def zerofun(A):
-            return sum(a*y for (a, y) in zip(A, Y))
+            return dot(A, Y)
         def objective(A):
             v = 0
             for a_i, x_i, y_i in zip(A, X, Y):
@@ -55,10 +55,7 @@ class SVM:
         self.W = sum(a*x*y for (a, x, y) in zip(A, X, Y))
 
     def predict_point(self, x):
-        v = self.kfun(self.W, x) - self.b
-        if v < 0:
-            return -1
-        return 1
+        return self.kfun(self.W, x) - self.b
 
     def predict(self, points):
         return array([self.predict_point(p) for p in points])
