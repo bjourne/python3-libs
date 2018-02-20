@@ -22,18 +22,20 @@ def test_svm_fit():
 
 from matplotlib import rcParams
 from matplotlib.pyplot import (axis,
-                               contour,
-                               get_current_fig_manager, scatter, show)
+                               clf, contour,
+                               get_current_fig_manager,
+                               savefig, scatter, show)
 from matplotlib.colors import ListedColormap
 from numpy import (arange, array,
                    concatenate,
                    linspace,
                    ones, unique)
 from numpy.random import randn
+from sklearn.svm import SVR
 
 def generate_samples(n):
-    c1 = [-1, -3]
-    c2 = [1, -3]
+    c1 = [-1, -0.5]
+    c2 = [1, -0.5]
     c3 = [1.0, 1.0]
     size = 0.3
 
@@ -47,10 +49,14 @@ def generate_samples(n):
     return X, Y
 
 def plot_result(svm, X, Y):
+    def do_predict(x, y):
+        inp = [[x, y]]
+        return svm.predict(inp)[0]
+
     xg = linspace(-5, 5)
     yg = linspace(-4, 4)
 
-    grid = array([[svm.predict_point([x, y]) for x in xg] for y in yg])
+    grid = array([[do_predict(x, y) for x in xg] for y in yg])
     contour(xg, yg, grid, (-1.0, 0.0, 1.0),
             colors = ('red', 'black', 'blue'),
             linewidths = (1, 3, 1))
@@ -58,7 +64,6 @@ def plot_result(svm, X, Y):
     scatter(x = X[Y == -1, 0], y = X[Y == -1, 1], c = 'red')
     scatter(x = X[Y == 1, 0], y = X[Y == 1, 1], c = 'blue')
     axis('equal')
-    show()
 
 if __name__ == '__main__':
     # Setting up matplotlib
@@ -67,6 +72,20 @@ if __name__ == '__main__':
     mng.window.showMaximized()
 
     X, Y = generate_samples(40)
-    svm = SVM('linear', C = 10)
+    svm = SVM('rbf',
+              C = 1,
+              degree = 2, coef0 = 0.0,
+              gamma = 5.0)
     svm.fit(X, Y)
     plot_result(svm, X, Y)
+    savefig('mine.png')
+    clf()
+
+    svm = SVR(kernel = 'rbf',
+              C = 1,
+              degree = 2, coef0 = 0,
+              gamma = 5.0)
+    svm.fit(X, Y)
+    plot_result(svm, X, Y)
+    savefig('their.png')
+    clf()
