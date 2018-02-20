@@ -2,7 +2,7 @@
 #
 # A simple Support Vector Machine written by me, with the help of a
 # lot of tutorial!
-from numpy import dot, zeros
+from numpy import dot, multiply, zeros
 from scipy.optimize import minimize
 
 class SVM:
@@ -50,9 +50,12 @@ class SVM:
 
         sv_x = X[sv_idx]
         sv_y = Y[sv_idx]
-        self.b = sum(a*y*self.kfun(sv_x, x)
-                     for (a, x, y) in zip(A, X, Y)) - sv_y
-        self.W = sum(a*x*y for (a, x, y) in zip(A, X, Y))
+
+        AY = multiply(A, Y)
+        AYX = list(zip(AY, X))
+
+        self.b = sum(ay * self.kfun(sv_x, x) for (ay, x) in AYX) - sv_y
+        self.W = sum(ay * x for (ay, x) in AYX)
 
     def predict_point(self, x):
         return self.kfun(self.W, x) - self.b

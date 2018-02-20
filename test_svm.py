@@ -47,10 +47,6 @@ def generate_samples(n):
     return X, Y
 
 def plot_result(svm, X, Y):
-    # xg = linspace(-5, 5)
-    # xg = linspace(X[:, 0].min() - 1, X[:, 1].max())
-    # yg = linspace(X[:, 1].min() - 1, X[:, 1].max())
-
     xg = linspace(-5, 5)
     yg = linspace(-4, 4)
 
