@@ -1,4 +1,4 @@
-# Copyright (C) 2018 Björn Lindqvist
+# Copyright (C) 2018 Björn Lindqvist <bjourne@gmail.com>
 #
 # A simple Support Vector Machine written by me, with the help of a
 # lot of tutorials!
