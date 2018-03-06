@@ -26,25 +26,28 @@ class SVM:
             return exp(-dot(x - y, x - y)/(2*self.gamma**2))
 
     def fit(self, X, Y):
-        """Trains the SVM. X is a sequence of vectors of the
-        samples features and Y a sequence of scalar classes,
-        often -1 and 1.
+        """Trains the SVM.
 
         For clarity(?), I have used capital names for sequences and
         lowercase for individual elements. X are the features, Y the
-        classes and A the alphas.
+        classes (-1 or 1) and A the alphas.
         """
         def zerofun(A):
             return dot(A, Y)
+
+        # We use the matrix version of the dual formulation.
+        N = len(X)
+        P = zeros((N, N))
+        for i in range(N):
+            for j in range(N):
+                P[i][j] = Y[i]*Y[j]*self.kfun(X[i], X[j])
+
         def objective(A):
-            v = 0
-            for a_i, x_i, y_i in zip(A, X, Y):
-                for a_j, x_j, y_j in zip(A, X, Y):
-                    v += a_i * a_j * y_i * y_j * self.kfun(x_i, x_j)
-            return (v / 2) - sum(A)
+            return (1/2)*(A.T.dot(P).dot(A)) - sum(A)
+
         constraints = {'type' : 'eq', 'fun' : zerofun}
         bounds = [(0, self.C) for b in X]
-        start = zeros(len(X))
+        start = zeros(N)
         ret = minimize(objective, start,
                        bounds = bounds,
                        constraints = constraints)
