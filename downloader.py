@@ -1,5 +1,6 @@
 from os.path import exists, getsize, isdir, join
 from requests import get
+from time import sleep
 from urllib.parse import urlparse
 
 def local_path(url, to = None):
@@ -30,22 +31,31 @@ def my_print(verbose, s):
         print(s)
 
 def download_file(url, to = None,
-                  retry_delay = 3, n_retries = 3, verbose = True):
+                  retry_delay = 3, n_retries = 3, verbose = True,
+                  assume_complete = False):
     """Flexible and resilient file downloader.
+
+    @assume_complete: if True, then the download is skipped without
+    contacting the server if the file exists on disk and it's size is
+    greater than zero.
     """
     to = local_path(url, to)
+    old_size = getsize(to) if exists(to) else 0
+    if assume_complete and old_size > 0:
+        my_print(verbose, '%s exists on disk - skipping' % to)
+        return
+
     headers = get_headers(to)
     r = get(url, stream = True, headers = headers)
     content_length = r.headers.get('Content-Length')
-    try:
-        content_length = int(content_length)
-    except ValueError:
+    if not content_length or not content_length.isnumeric():
         if n_retries > 0:
             sleep(retry_delay)
             download_file(url, to, retry_delay, n_retries - 1)
             return
         raise Exception('Content-Length header missing!')
-    old_size = getsize(to) if exists(to) else 0
+    content_length = int(content_length)
+
     target_size = old_size + content_length
     code = r.status_code
     if code == 416 or content_length == old_size:
@@ -59,7 +69,8 @@ def download_file(url, to = None,
         for chunk in r.iter_content(chunk_size = 256 * 1024):
             if chunk:
                 f.write(chunk)
-        curr_size = getsize(to)
-        if curr_size < target_size:
-            my_print(verbose, 'Partial transfer, retrying.')
-            download_file(url, to)
+    curr_size = getsize(to)
+    if curr_size < target_size:
+        sleep(retry_delay)
+        my_print(verbose, 'Only got %d bytes, retrying.' % curr_size)
+        download_file(url, to)
