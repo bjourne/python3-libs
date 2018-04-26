@@ -5,5 +5,5 @@ Python3 library code I have written. Run the unit tests using:
 
 ## Installation
 
-This code isn't intended to be installed. If you find some module you
+This code isn't meant to be installed. If you find some module you
 like, just copy it.
