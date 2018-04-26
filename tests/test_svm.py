@@ -1,6 +1,6 @@
 from numpy import array
 from numpy.testing import assert_approx_equal
-from svm import SVM
+from learning.svm import SVM
 
 def test_init_svm():
     svm = SVM(kernel = 'linear')

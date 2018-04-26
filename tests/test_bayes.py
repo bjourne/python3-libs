@@ -1,4 +1,4 @@
-from bayes import BayesClassifier, BoostClassifier
+from learning.bayes import BayesClassifier, BoostClassifier
 from numpy import allclose, array, array_equal
 from sklearn.datasets import load_iris
 
