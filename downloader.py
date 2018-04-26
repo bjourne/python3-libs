@@ -1,5 +1,6 @@
 from os.path import exists, getsize, isdir, join
 from requests import get
+from shutil import copyfileobj
 from time import sleep
 from urllib.parse import urlparse
 
@@ -30,14 +31,29 @@ def my_print(verbose, s):
     if verbose:
         print(s)
 
+def write_to_file(r, to, chunk_size):
+    if chunk_size > 0:
+        with open(to, 'ab') as f:
+            for chunk in r.iter_content(chunk_size = chunk_size):
+                if chunk:
+                    f.write(chunk)
+    else:
+        r.raw.decode_content = True
+        with open(to, 'wb') as f:
+            copyfileobj(r.raw, f)
+
 def download_file(url, to = None,
                   retry_delay = 3, n_retries = 3, verbose = True,
-                  assume_complete = False):
+                  assume_complete = False,
+                  chunk_size = 256 * 1024):
     """Flexible and resilient file downloader.
 
     @assume_complete: if True, then the download is skipped without
     contacting the server if the file exists on disk and it's size is
     greater than zero.
+
+    @chunk_size: Chunk size to use when streaming downloads. Set to 0
+    to disable.
     """
     to = local_path(url, to)
     old_size = getsize(to) if exists(to) else 0
@@ -65,10 +81,7 @@ def download_file(url, to = None,
              (url, format_bytes(content_length, old_size), to))
     if code not in (200, 206):
         raise Exception('Some failure %s!' % r)
-    with open(to, 'ab') as f:
-        for chunk in r.iter_content(chunk_size = 256 * 1024):
-            if chunk:
-                f.write(chunk)
+    write_to_file(r, to, chunk_size)
     curr_size = getsize(to)
     if curr_size < target_size:
         sleep(retry_delay)
