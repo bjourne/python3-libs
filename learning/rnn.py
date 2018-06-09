@@ -41,18 +41,20 @@ class ParamSet:
         # First the three connection matrices, then the two bias
         # vectors.
         if not sigma:
-            self.Wxh = zeros(in_dim)
-            self.Whh = zeros(hidden_dim)
-            self.Why = zeros(out_dim)
+            self.U = zeros(in_dim)
+            self.W = zeros(hidden_dim)
+            self.V = zeros(out_dim)
         else:
-            self.Wxh = randn(*in_dim) * sigma
-            self.Whh = randn(*hidden_dim) * sigma
-            self.Why = randn(*out_dim) * sigma
-        self.bh = zeros((hidden_size, 1))
-        self.by = zeros((vocab_size, 1))
+            self.U = randn(*in_dim) * sigma
+            self.W = randn(*hidden_dim) * sigma
+            self.V = randn(*out_dim) * sigma
+
+        # First and second bias vectors.
+        self.b = zeros((hidden_size, 1))
+        self.c = zeros((vocab_size, 1))
 
     def params(self):
-        return (self.Wxh, self.Whh, self.Why, self.bh, self.by)
+        return (self.U, self.W, self.V, self.b, self.c)
 
     def sample(self, h, seed_ix, n):
         '''
@@ -60,54 +62,54 @@ class ParamSet:
         seed_ix: Given character
         n: Length of sequence to generate.
         '''
-        x = zeros_like(self.by)
+        U, W, V, b, c = self.params()
+        x = zeros_like(c)
         x[seed_ix]= 1
         ixes = []
         for t in range(n):
-            h = tanh(dot(self.Wxh, x) + dot(self.Whh, h) + self.bh)
-            y = dot(self.Why, h) + self.by
-            p = softmax(y)
-            ix = choice(range(self.by.shape[0]), p = p.ravel())
-            x = zeros_like(self.by)
+            h = tanh(dot(U, x) + dot(W, h) + b)
+            o = dot(V, h) + c
+            p = softmax(o)
+            ix = choice(range(c.shape[0]), p = p.ravel())
+            x = zeros_like(c)
             x[ix] = 1
             ixes.append(ix)
         return ixes
 
     def loss_fun(self, X, Y, hprev):
+        U, W, V, b, c = self.params()
         xs, hs, ys, ps = {}, {}, {}, {}
         hs[-1] = copy(hprev)
         loss = 0
         for t in range(len(X)):
-            xs[t] = zeros_like(self.by)
+            xs[t] = zeros_like(c)
             xs[t][X[t]] = 1
-            hs[t] = tanh(dot(self.Wxh, xs[t]) +
-                         dot(self.Whh, hs[t - 1]) +
-                         self.bh)
-            ys[t] = dot(self.Why, hs[t]) + self.by
+            hs[t] = tanh(dot(U, xs[t]) + dot(W, hs[t - 1]) + b)
+            ys[t] = dot(V, hs[t]) + c
             ps[t] = softmax(ys[t])
             # softmax (cross-entropy loss)
             loss += -log(ps[t][Y[t], 0])
 
-        d = ParamSet(self.bh.shape[0], self.by.shape[0], 0)
+        d = ParamSet(b.shape[0], c.shape[0], 0)
 
         dhnext = zeros_like(hs[0])
         for t in reversed(range(len(X))):
             dy = copy(ps[t])
             # Backprop into y.
             dy[Y[t]] = -1
-            d.Why += dot(dy, hs[t].T)
-            d.by += dy
+            d.V += dot(dy, hs[t].T)
+            d.c += dy
             # Backprop into h
-            dh = dot(self.Why.T, dy) + dhnext
+            dh = dot(V.T, dy) + dhnext
             # Backprop through tanh nonlinearity
             dhraw = (1 - hs[t] * hs[t]) * dh
-            d.bh += dhraw
-            d.Wxh += dot(dhraw, xs[t].T)
-            d.Whh += dot(dhraw, hs[t - 1].T)
-            dhnext = dot(self.Whh.T, dhraw)
+            d.b += dhraw
+            d.U += dot(dhraw, xs[t].T)
+            d.W += dot(dhraw, hs[t - 1].T)
+            dhnext = dot(W.T, dhraw)
 
         # Clip to mitigate exploding gradients
-        dparams = (d.Wxh, d.Whh, d.Why, d.bh, d.by)
+        dparams = (d.U, d.W, d.V, d.b, d.c)
         for dparam in dparams:
             clip(dparam, -5, 5, out = dparam)
         return loss, dparams, hs[len(X) - 1]
