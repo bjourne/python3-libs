@@ -3,6 +3,22 @@ from numpy.random import choice, randn
 from scipy.special import logsumexp
 from sys import argv, exit
 
+
+def softmax(x):
+    # What kind of softmax do we want?
+    x = exp(x - logsumexp(x, axis = 0))
+    # log(0) errors are annoying
+    x[x == 0] = finfo(float).eps
+    return x
+
+def one_hot(n, i):
+    '''
+    Creates a one-hot column vector.
+    '''
+    x = zeros((n, 1))
+    x[i] = 1
+    return x
+
 class TrainingData:
     def __init__(self, filename):
         self.data = open(filename, 'rb').read().decode('utf-8')
@@ -26,72 +42,59 @@ class TrainingData:
             assert len(Y) == seq_len
             yield X, Y
 
-def softmax(x):
-    # What kind of softmax do we want?
-    x = exp(x - logsumexp(x, axis = 0))
-    # log(0) errors are annoying
-    x[x == 0] = finfo(float).eps
-    return x
-
 class ParamSet:
-    def __init__(self, hidden_size, vocab_size, sigma):
-        in_dim = (hidden_size, vocab_size)
-        hidden_dim = (hidden_size, hidden_size)
-        out_dim = (vocab_size, hidden_size)
+    def __init__(self, m, K, sigma):
         # First the three connection matrices, then the two bias
         # vectors.
         if not sigma:
-            self.U = zeros(in_dim)
-            self.W = zeros(hidden_dim)
-            self.V = zeros(out_dim)
+            self.U = zeros((m, K))
+            self.W = zeros((m, m))
+            self.V = zeros((K, m))
         else:
-            self.U = randn(*in_dim) * sigma
-            self.W = randn(*hidden_dim) * sigma
-            self.V = randn(*out_dim) * sigma
+            self.U = randn(m, K) * sigma
+            self.W = randn(m, m) * sigma
+            self.V = randn(K, m) * sigma
 
         # First and second bias vectors.
-        self.b = zeros((hidden_size, 1))
-        self.c = zeros((vocab_size, 1))
+        self.b = zeros((m, 1))
+        self.c = zeros((K, 1))
+
+        self.m = m
+        self.K = K
 
     def params(self):
-        return (self.U, self.W, self.V, self.b, self.c)
+        return self.U, self.W, self.V, self.b, self.c
 
-    def sample(self, h, seed_ix, n):
+    def sample(self, h, ix0, n):
         '''
         h: Current hidden state.
-        seed_ix: Given character
+        ix0: Given character
         n: Length of sequence to generate.
         '''
-        U, W, V, b, c = self.params()
-        x = zeros_like(c)
-        x[seed_ix]= 1
-        ixes = []
+        (U, W, V, b, c), K = self.params(), self.K
+        x = one_hot(K, ix0)
         for t in range(n):
             h = tanh(dot(U, x) + dot(W, h) + b)
             o = dot(V, h) + c
             p = softmax(o)
-            ix = choice(range(c.shape[0]), p = p.ravel())
-            x = zeros_like(c)
-            x[ix] = 1
-            ixes.append(ix)
-        return ixes
+            ix = choice(K, p = p.ravel())
+            x = one_hot(K, ix)
+            yield ix
 
     def loss_fun(self, X, Y, hprev):
-        U, W, V, b, c = self.params()
+        (U, W, V, b, c), K = self.params(), self.K
         xs, hs, ys, ps = {}, {}, {}, {}
         hs[-1] = copy(hprev)
         loss = 0
         for t in range(len(X)):
-            xs[t] = zeros_like(c)
-            xs[t][X[t]] = 1
+            xs[t] = one_hot(K, X[t])
             hs[t] = tanh(dot(U, xs[t]) + dot(W, hs[t - 1]) + b)
             ys[t] = dot(V, hs[t]) + c
             ps[t] = softmax(ys[t])
             # softmax (cross-entropy loss)
             loss += -log(ps[t][Y[t], 0])
 
-        d = ParamSet(b.shape[0], c.shape[0], 0)
-
+        d = ParamSet(self.m, K, 0)
         dhnext = zeros_like(hs[0])
         for t in reversed(range(len(X))):
             dy = copy(ps[t])
@@ -109,17 +112,17 @@ class ParamSet:
             dhnext = dot(W.T, dhraw)
 
         # Clip to mitigate exploding gradients
-        dparams = (d.U, d.W, d.V, d.b, d.c)
+        dparams = d.U, d.W, d.V, d.b, d.c
         for dparam in dparams:
             clip(dparam, -5, 5, out = dparam)
         return loss, dparams, hs[len(X) - 1]
 
 class RNN:
-    def __init__(self, hidden_size, vocab_size, sigma, eta):
-        self.state = ParamSet(hidden_size, vocab_size, sigma)
-        self.mem = ParamSet(hidden_size, vocab_size, 0)
+    def __init__(self, m, K, sigma, eta):
+        self.state = ParamSet(m, K, sigma)
+        self.mem = ParamSet(m, K, 0)
         self.eta = eta
-        self.hprev = zeros((hidden_size, 1))
+        self.hprev = zeros((m, 1))
 
     def train_step(self, X, Y):
         '''
@@ -132,7 +135,7 @@ class RNN:
         for param, dparam, mem in zip(params, dparams, mems):
             mem += dparam * dparam
             # Adagrad update. What is the best epsilon?
-            param += -self.eta * dparam / sqrt(mem + 1e-8)
+            param += -self.eta * dparam / sqrt(mem + 1e-6)
         return loss
 
 if __name__ == '__main__':
