@@ -15,6 +15,29 @@ from numpy import *
 from numpy.random import choice, randn
 from sys import argv, exit
 
+from random import uniform
+
+def grad_check(state, X, Y, hprev):
+    exc_fmt = 'Suspicious d%s: num %f, ana %f, rel %f'
+    num_checks, delta = 10, 1e-5
+    _, deriv, _ = state.loss_and_grad(X, Y, hprev)
+    names = ('U', 'W', 'V', 'b', 'c')
+    for p, dp, name in zip(state.params(), deriv.params(), names):
+        for i in range(num_checks):
+            ri = int(uniform(0, p.size))
+            old_val = p.flat[ri]
+            p.flat[ri] = old_val + delta
+            cg0, _, _ = state.loss_and_grad(X, Y, hprev)
+            p.flat[ri] = old_val - delta
+            cg1, _, _ = state.loss_and_grad(X, Y, hprev)
+            p.flat[ri] = old_val
+            d_ana = dp.flat[ri]
+            d_num = (cg0 - cg1) / ( 2 * delta )
+            delta = abs(d_ana - d_num)
+            rel = delta / abs(d_num + d_ana)
+            if delta > 1e-5 and rel > 1e-5:
+                raise Exception(exc_fmt % (name, d_num, d_ana, rel))
+
 def one_hot(n, i):
     x = zeros((n, 1))
     x[i] = 1
@@ -116,6 +139,7 @@ def train_epoch(state, mem, training_data, seq_len, smooth_loss,
     hprev = zeros_like(state.b)
     n = 0
     for X, Y in training_data.generate_samples(seq_len):
+        # grad_check(state, X, Y, hprev)
         if n % gen_interval == 0:
             print('*** ITER %d LOSS %f ***' % (n, smooth_loss))
             vec = state.sample(hprev, X[0], gen_len)
