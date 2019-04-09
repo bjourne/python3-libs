@@ -17,7 +17,6 @@ Token = namedtuple('Token', ['type', 'value'])
 class Lexer:
     def __init__(self, str):
         self.input = findall(r'(\(|\)|λ|\\|[a-z][a-z]*|\.)', str)
-        self.index = 0
         self.token = None
         self.next_token()
 
@@ -140,8 +139,8 @@ def test_to_string():
     assert to_string(parse('a (b c)')) == 'a (b c)'
     str3 = r'\x. \y. z \m. o'
     assert to_string(parse(str3)) == r'\x y. z \m. o'
-    print(to_string(parse(str3), brackets = True))
-    assert to_string(parse(str3), brackets = True) == r'(\x y. (z (\m. o)))'
+    assert to_string(parse(str3), brackets = True) \
+        == r'(\x y. (z (\m. o)))'
 
     s = 'x y z'
     assert to_string(parse(s), brackets = True) == '((x y) z)'
