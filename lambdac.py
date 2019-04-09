@@ -107,51 +107,39 @@ class Parser:
 def parse(str):
     return Parser(Lexer(str)).parse()
 
-def to_string(ast, brackets = False):
+def to_string(ast, brackets = False, inleft = False):
     appl_fmt = '%s %s'
     abst_fmt = r'\%s. %s'
     if brackets:
         appl_fmt = '(%s)' % appl_fmt
         abst_fmt = '(%s)' % abst_fmt
     if isinstance(ast, Appl):
-        str_lhs = to_string(ast.lhs, brackets)
-        str_rhs = to_string(ast.rhs, brackets)
+        lhs = to_string2(ast.lhs, brackets, True)
+        rhs = to_string2(ast.rhs, brackets, inleft)
         if isinstance(ast.rhs, Appl) and not brackets:
-            str_rhs = '(%s)' % str_rhs
-        if isinstance(ast.lhs, Abst) and not brackets:
-            str_lhs = '(%s)' % str_lhs
-        return appl_fmt % (str_lhs, str_rhs)
-    if isinstance(ast, Ident):
-        return ast.id
+            return '%s (%s)' % (lhs, rhs)
+        return appl_fmt % (lhs, rhs)
     if isinstance(ast, Abst):
-        body = to_string(ast.body, brackets)
+        body = to_string2(ast.body, brackets, inleft)
+        if inleft and not brackets:
+            return r'(\%s. %s)' % (ast.id, body)
         return abst_fmt % (ast.id, body)
+    return ast.id
 
 # See https://www.easycalculation.com/analytical/lambda-calculus.php
 def test_parser():
-    str1 = r'\x. x'
-    assert to_string(parse(str1)) == r'\x. x'
-    assert str(parse(str1)) == "Abst(id='x', body=Ident(id='x'))"
-    str2 = 'x y z'
-    to_string(parse(str2), brackets = True)
-    assert to_string(parse(str2), brackets = True) == '((x y) z)'
-    assert to_string(parse(str2)) == 'x y z'
+    assert to_string2(parse(r'a (\b. a) c')) == r'a (\b. a) c'
+    assert to_string2(parse(r'(\b. a) c')) == r'(\b. a) c'
+    print(to_string2(parse('(a b) (c d)')))
+    assert to_string2(parse('(a b) (c d)')) == 'a b (c d)'
+    assert to_string2(parse('a (b c)')) == 'a (b c)'
     str3 = r'\x. \y. z \m. o'
-    assert to_string(parse(str3)) == r'\x. \y. z \m. o'
-    assert to_string(parse(str3), brackets = True) == r'(\x. (\y. (z (\m. o))))'
+    assert to_string2(parse(str3)) == r'\x. \y. z \m. o'
+    assert to_string2(parse(str3), brackets = True) == r'(\x. (\y. (z (\m. o))))'
 
-    str4 = r'a (b c)'
-    assert to_string(parse(str4)) == 'a (b c)'
-
-    # Since we are parsing from the left
-    assert to_string(parse('(a b) (c d)')) == 'a b (c d)'
-
-    # Brackets to disambiguate
-    assert to_string(parse(r'(\b. a) c')) == r'(\b. a) c'
-
-    # Need brackets here too, doesn't work yet.
-    assert to_string(parse(r'a (\b. a) c')) == r'a (\b. a) c'
-
+    str2 = 'x y z'
+    assert to_string2(parse(str2), brackets = True) == '((x y) z)'
+    assert to_string2(parse(str2)) == 'x y z'
 
 if __name__ == '__main__':
     test_parser()
