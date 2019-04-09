@@ -166,8 +166,8 @@ def training(state, mem, training_data, seq_len, interval, gen_len, eta):
 def draw_diagram(losses, interval):
     import matplotlib.pyplot as plt
     xaxis = arange(len(losses)) * interval
-    xaxis = xaxis[20:]
-    losses = losses[20:]
+    xaxis = xaxis
+    losses = losses
     plt.plot(xaxis, losses)
     plt.ylabel('Smooth loss')
     plt.xlabel('Step')
@@ -186,14 +186,11 @@ if __name__ == '__main__':
     mem = State(m, K, 0)
 
     losses = []
-    texts = []
     gen_int = 1000
     try:
         for loss, text in training(state, mem, td, 25, 1000, 200, 0.025):
             losses.append(loss)
-            texts.append(text)
     except KeyboardInterrupt:
-        print(texts)
         print(losses)
         draw_diagram(losses, gen_int)
         vec = state.sample(td.ch2ix['\n'], 1000)
