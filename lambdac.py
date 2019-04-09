@@ -14,107 +14,57 @@ EOF = 'eof'
 
 Token = namedtuple('Token', ['type', 'value'])
 
-class Lexer:
-    def __init__(self, str):
-        self.input = findall(r'(\(|\)|λ|\\|[a-z][a-z]*|\.)', str)
-        self.token = None
-        self.next_token()
-
-    def next_token(self):
-        if not self.input:
-            self.token = Token(EOF, None)
-            return
-        at = self.input.pop(0)
-        if at in r'λ\\':
-            self.token = Token(LAMBDA, None)
-        elif at == '.':
-            self.token = Token(DOT, None)
-        elif at == '(':
-            self.token = Token(LPAREN, None)
-        elif at == ')':
-            self.token = Token(RPAREN, None)
-        else:
-            self.token = Token(LCID, at)
-
-    def next(self, type):
-        return self.token.type == type
-
-    def skip(self, type):
-        if self.next(type):
-            self.next_token()
-            return True
-        return False
-
-    def match(self, type):
-        if self.next(type):
-            self.next_token()
-            return
-        raise Exception('Parse error!')
-
-    def value(self, type):
-        '''
-        Returns value of current token.
-        '''
-        tok = self.token
-        self.match(type)
-        return tok.value
-
 Ident = namedtuple('Ident', ['id'])
 Appl = namedtuple('Appl', ['lhs', 'rhs'])
 Abst = namedtuple('Abst', ['id', 'body'])
 
-class Parser:
-    def __init__(self, str):
-        self.tokens = findall(r'(\(|\)|λ|\\|[a-z][a-z]*|\.)', str)
-        #self.lexer = lexer
+def term(toks):
+    if toks[0].type == LAMBDA:
+        toks.pop(0)
+        type, value = toks.pop(0)
+        assert type == LCID
+        assert toks.pop(0).type == DOT
+        return Abst(value, term(toks))
+    return appl(toks)
 
-    def parse(self):
-        result = self.term()
-        self.lexer.match(EOF)
-        return result
+def atom(toks):
+    peek_type = toks[0].type
+    if peek_type == LPAREN:
+        toks.pop(0)
+        trm = term(toks)
+        assert toks.pop(0).type == RPAREN
+        return trm
+    elif peek_type == LCID:
+        return Ident(toks.pop(0).value)
+    elif peek_type == LAMBDA:
+        toks.pop(0)
+        type, value = toks.pop(0)
+        assert type == LCID
+        assert toks.pop(0).type == DOT
+        return Abst(value, term(toks))
+    return None
 
-    def term(self):
-        if self.tokens[0].type == LAMBDA:
-            self.tokens.pop(0)
-            lcid = self.topens.pop(0)
-            assert lcid.type == LCID
-            assert self.tokens.pop(0).type == DOT
-            term = self.term()
-            return Abst(lcid.id, term)
-        return self.appl()
-        # if self.lexer.skip(LAMBDA):
-        #     id = self.lexer.value(LCID)
-        #     self.lexer.match(DOT)
-        #     term = self.term()
-        #     return Abst(id, term)
-        # return self.appl()
+def appl(toks):
+    lhs = atom(toks)
+    while True:
+        rhs = atom(toks)
+        if not rhs:
+            return lhs
+        lhs = Appl(lhs, rhs)
 
-    def appl(self):
-        lhs = self.atom()
-        while True:
-            rhs = self.atom()
-            if not rhs:
-                return lhs
-            lhs = Appl(lhs, rhs)
+def parse(s):
+    types = {'λ' : LAMBDA,
+             '\\' : LAMBDA,
+             '.' : DOT,
+             '(' : LPAREN,
+             ')' : RPAREN}
+    parts = findall(r'(\(|\)|λ|\\|[a-z][a-z]*|\.)', s)
+    toks = [Token(types.get(p, LCID), p) for p in parts]
+    toks.append(Token(EOF, None))
 
-    def atom(self):
-        if self.lexer.skip(LPAREN):
-            term = self.term()
-            self.lexer.match(RPAREN)
-            return term
-        elif self.lexer.next(LCID):
-            id = self.lexer.value(LCID)
-            return Ident(id)
-        elif self.lexer.skip(LAMBDA):
-            id = self.lexer.value(LCID)
-            self.lexer.match(DOT)
-            term = self.term()
-            return Abst(id, term)
-        return None
-
-def parse(str):
-    return Parser(str).parse()
-    #return Parser(Lexer(str)).parse()
+    result = term(toks)
+    assert toks[0].type == EOF
+    return result
 
 def to_string(ast, brackets = False, inleft = False):
     appl_fmt = '%s %s'
@@ -170,5 +120,5 @@ def test_to_string():
 
 
 if __name__ == '__main__':
-    Parser(r'\x. x').parse()
-    #test_to_string()
+    #print(to_string(Parser(r'\x. \y. z \m. o').parse()))
+    test_to_string()
