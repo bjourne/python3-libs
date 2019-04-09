@@ -1,16 +1,11 @@
-# Copyright (C) 2018 Björn Lindqvist <bjourne@gmail.com>
+# Copyright (C) 2018-2019 Björn Lindqvist <bjourne@gmail.com>
 #
 # RNN for text generation. The code is very much based on the one
 # provided in "The Unreasonable Effectiveness of Recurrent Neural
 # Networks" article:
 #
 # http://karpathy.github.io/2015/05/21/rnn-effectiveness/
-#
-# @  5000, loss = 59, 62, 60, 58, 62, 57
-# @ 10000, loss = 56, 55, 52, 54, 54, 51, 57, 54, 58
-# @ 20000, loss = 51, 48, 53
-# @ 30000, loss = 50, 47, 51, 51, 51
-# @ 40000, loss = 50
+from codecs import open
 from numpy import *
 from numpy.random import choice, randn
 from sys import argv, exit
@@ -53,16 +48,19 @@ def adagrad_update(state, deriv, mem, eta):
         p += -eta * dp / sqrt(m + 1e-8)
 
 class TrainingData:
-    def __init__(self, filename):
-        self.data = open(filename, 'r').read()
-        chars = list(set(self.data))
+    def __init__(self, text):
+        '''
+        text: text to use as training data.
+        '''
+        self.text = text
+        chars = list(set(self.text))
         self.ch2ix = {ch:i for i, ch in enumerate(chars)}
         self.ix2ch = {i:ch for i, ch in enumerate(chars)}
 
     def generate_samples(self, seq_len):
-        for i in range(0, len(self.data) - seq_len - 1, seq_len):
-            X = self.data[i : i + seq_len]
-            Y = self.data[i + 1 : i + 1 + seq_len]
+        for i in range(0, len(self.text) - seq_len - 1, seq_len):
+            X = self.text[i : i + seq_len]
+            Y = self.text[i + 1 : i + 1 + seq_len]
             yield self.encode(X), self.encode(Y)
 
     def encode(self, text):
@@ -72,6 +70,9 @@ class TrainingData:
         return ''.join(self.ix2ch[i] for i in vec)
 
 class State:
+    '''
+    A two layer RNN.
+    '''
     def __init__(self, m, K, sigma):
         self.m = m
         self.K = K
@@ -91,9 +92,10 @@ class State:
     def params(self):
         return self.U, self.W, self.V, self.b, self.c
 
-    def sample(self, h, ix0, n):
+    def sample(self, ix0, n):
         U, W, V, b, c = self.params()
         x = one_hot(self.K, ix0)
+        h = copy(self.hprev)
         for t in range(n):
             h = tanh(dot(U, x) + dot(W, h) + b)
             y = dot(V, h) + c
@@ -102,9 +104,9 @@ class State:
             x = one_hot(self.K, ix)
             yield ix
 
-    def loss_and_grad(self, X, Y, hprev):
+    def loss_and_grad(self, X, Y):
         xs, hs, ys, ps = {}, {}, {}, {}
-        hs[-1] = copy(hprev)
+        hs[-1] = copy(self.hprev)
         n = len(X)
 
         # Forward pass
@@ -114,7 +116,7 @@ class State:
                          dot(self.W, hs[t - 1]) + self.b)
             ys[t] = dot(self.V, hs[t]) + self.c
         ps = {t : softmax(ys[t]) for t in range(n)}
-        loss = -sum(log(ps[t][Y[t],0]) for t in range(n))
+        loss = -sum(log(ps[t][Y[t], 0]) for t in range(n))
 
         # Backward pass
         deriv = State(self.m, self.K, 0)
@@ -134,32 +136,65 @@ class State:
             clip(dp, -5, 5, out = dp)
         return loss, deriv, hs[n - 1]
 
-def train_epoch(state, mem, training_data, seq_len, smooth_loss,
-                gen_interval, gen_len):
-    hprev = zeros_like(state.b)
+def training(state, mem, training_data, seq_len, interval, gen_len, eta):
+    '''Returns a generator that trains the rnn forever.
+
+    state: the (initial) state of the rnn.
+    mem: the (initial) state of the rnn's memory.
+    training_data: object with data from which samples are generated.
+    seq_len: sequence lengths...
+    interval: dump some output every interval samples.
+    gen_text: how much text to generate.
+    eta: learning rate of something.
+    '''
+    smooth_loss = -log(1.0 / K) * seq_len
     n = 0
-    for X, Y in training_data.generate_samples(seq_len):
-        # grad_check(state, X, Y, hprev)
-        if n % gen_interval == 0:
-            print('*** ITER %d LOSS %f ***' % (n, smooth_loss))
-            vec = state.sample(hprev, X[0], gen_len)
-            print(training_data.decode(vec))
-        loss, d, hprev = state.loss_and_grad(X, Y, hprev)
-        smooth_loss = smooth_loss * 0.999 + loss * 0.001
-        adagrad_update(state, d, mem, 0.1)
-        n += 1
-    return smooth_loss
+    while True:
+        state.hprev = zeros_like(state.b)
+        for X, Y in training_data.generate_samples(seq_len):
+            if n % interval == 0:
+                print('*** STEP %d LOSS %f ***' % (n, smooth_loss))
+                vec = state.sample(X[0], gen_len)
+                text = training_data.decode(vec)
+                print(text)
+                yield smooth_loss, text
+            loss, deriv, state.hprev = state.loss_and_grad(X, Y)
+            smooth_loss = smooth_loss * 0.999 + loss * 0.001
+            adagrad_update(state, deriv, mem, eta)
+            n += 1
+
+def draw_diagram(losses, interval):
+    import matplotlib.pyplot as plt
+    xaxis = arange(len(losses)) * interval
+    xaxis = xaxis[20:]
+    losses = losses[20:]
+    plt.plot(xaxis, losses)
+    plt.ylabel('Smooth loss')
+    plt.xlabel('Step')
+    plt.savefig('losses.png')
 
 if __name__ == '__main__':
     if len(argv) != 2:
         print('usage %s: filename' % argv[0])
         exit(1)
 
-    td = TrainingData(argv[1])
-    m, K, seq_len = 100, len(td.ch2ix), 25
+    with open(argv[1], 'r', 'utf-8') as f:
+        text = f.read()
+    td = TrainingData(text)
+    m, K = 100, len(td.ch2ix)
     state = State(m, K, 0.01)
     mem = State(m, K, 0)
-    smooth_loss = -log(1.0 / K) * seq_len
-    while True:
-        smooth_loss = train_epoch(state, mem, td, seq_len, smooth_loss,
-                                  1000, 200)
+
+    losses = []
+    texts = []
+    gen_int = 1000
+    try:
+        for loss, text in training(state, mem, td, 25, 1000, 200, 0.025):
+            losses.append(loss)
+            texts.append(text)
+    except KeyboardInterrupt:
+        print(texts)
+        print(losses)
+        draw_diagram(losses, gen_int)
+        vec = state.sample(td.ch2ix['\n'], 1000)
+        print(td.decode(vec))
