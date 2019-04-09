@@ -64,8 +64,9 @@ Appl = namedtuple('Appl', ['lhs', 'rhs'])
 Abst = namedtuple('Abst', ['id', 'body'])
 
 class Parser:
-    def __init__(self, lexer):
-        self.lexer = lexer
+    def __init__(self, str):
+        self.tokens = findall(r'(\(|\)|λ|\\|[a-z][a-z]*|\.)', str)
+        #self.lexer = lexer
 
     def parse(self):
         result = self.term()
@@ -73,12 +74,20 @@ class Parser:
         return result
 
     def term(self):
-        if self.lexer.skip(LAMBDA):
-            id = self.lexer.value(LCID)
-            self.lexer.match(DOT)
+        if self.tokens[0].type == LAMBDA:
+            self.tokens.pop(0)
+            lcid = self.topens.pop(0)
+            assert lcid.type == LCID
+            assert self.tokens.pop(0).type == DOT
             term = self.term()
-            return Abst(id, term)
+            return Abst(lcid.id, term)
         return self.appl()
+        # if self.lexer.skip(LAMBDA):
+        #     id = self.lexer.value(LCID)
+        #     self.lexer.match(DOT)
+        #     term = self.term()
+        #     return Abst(id, term)
+        # return self.appl()
 
     def appl(self):
         lhs = self.atom()
@@ -104,7 +113,8 @@ class Parser:
         return None
 
 def parse(str):
-    return Parser(Lexer(str)).parse()
+    return Parser(str).parse()
+    #return Parser(Lexer(str)).parse()
 
 def to_string(ast, brackets = False, inleft = False):
     appl_fmt = '%s %s'
@@ -160,4 +170,5 @@ def test_to_string():
 
 
 if __name__ == '__main__':
-    test_to_string()
+    Parser(r'\x. x').parse()
+    #test_to_string()
