@@ -1,4 +1,4 @@
-# Copyright (C) 2018 Björn Lindqvist <bjourne@gmail.com>
+# Copyright (C) 2018-2019 Björn Lindqvist <bjourne@gmail.com>
 #
 # Based on:
 # https://tadeuzagallo.com/blog/writing-a-lambda-calculus-interpreter-in-javascript/
@@ -114,32 +114,51 @@ def to_string(ast, brackets = False, inleft = False):
         appl_fmt = '(%s)' % appl_fmt
         abst_fmt = '(%s)' % abst_fmt
     if isinstance(ast, Appl):
-        lhs = to_string2(ast.lhs, brackets, True)
-        rhs = to_string2(ast.rhs, brackets, inleft)
+        lhs = to_string(ast.lhs, brackets, True)
+        rhs = to_string(ast.rhs, brackets, inleft)
         if isinstance(ast.rhs, Appl) and not brackets:
             return '%s (%s)' % (lhs, rhs)
         return appl_fmt % (lhs, rhs)
     if isinstance(ast, Abst):
-        body = to_string2(ast.body, brackets, inleft)
+        params = [ast.id]
+        body = ast.body
+        while isinstance(body, Abst):
+            params += [body.id]
+            body = body.body
+        body = to_string(body, brackets, False)
+        param_str = ' '.join(params)
         if inleft and not brackets:
-            return r'(\%s. %s)' % (ast.id, body)
-        return abst_fmt % (ast.id, body)
+            return r'(\%s. %s)' % (param_str, body)
+        return abst_fmt % (param_str, body)
     return ast.id
 
 # See https://www.easycalculation.com/analytical/lambda-calculus.php
-def test_parser():
-    assert to_string2(parse(r'a (\b. a) c')) == r'a (\b. a) c'
-    assert to_string2(parse(r'(\b. a) c')) == r'(\b. a) c'
-    print(to_string2(parse('(a b) (c d)')))
-    assert to_string2(parse('(a b) (c d)')) == 'a b (c d)'
-    assert to_string2(parse('a (b c)')) == 'a (b c)'
+def test_to_string():
+    assert to_string(parse(r'a (\b. a) c')) == r'a (\b. a) c'
+    assert to_string(parse(r'(\b. a) c')) == r'(\b. a) c'
+    assert to_string(parse('(a b) (c d)')) == 'a b (c d)'
+    assert to_string(parse('a (b c)')) == 'a (b c)'
     str3 = r'\x. \y. z \m. o'
-    assert to_string2(parse(str3)) == r'\x. \y. z \m. o'
-    assert to_string2(parse(str3), brackets = True) == r'(\x. (\y. (z (\m. o))))'
+    assert to_string(parse(str3)) == r'\x y. z \m. o'
+    print(to_string(parse(str3), brackets = True))
+    assert to_string(parse(str3), brackets = True) == r'(\x y. (z (\m. o)))'
 
-    str2 = 'x y z'
-    assert to_string2(parse(str2), brackets = True) == '((x y) z)'
-    assert to_string2(parse(str2)) == 'x y z'
+    s = 'x y z'
+    assert to_string(parse(s), brackets = True) == '((x y) z)'
+    assert to_string(parse(s)) == 'x y z'
+
+    examples = [
+        (r'(\b. \c. b c (\t. \f. f)) (\t. \f. f)',
+         r'(\b c. b c \t f. f) \t f. f'),
+        (r'(\n. \s. \z. s (n s z)) (\s. \z. s z)',
+         r'(\n s z. s (n s z)) \s z. s z'),
+        (r'(\x. x) (\y. y)',
+         r'(\x. x) \y. y'),
+        (r'((a (\x. x)) a)', r'a (\x. x) a')
+        ]
+    for inp, out in examples:
+        assert to_string(parse(inp)) == out
+
 
 if __name__ == '__main__':
-    test_parser()
+    test_to_string()
