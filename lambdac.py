@@ -5,15 +5,9 @@
 from collections import namedtuple
 from re import findall
 
-LAMBDA = 'lambda'
-DOT = '.'
-LPAREN = '('
-RPAREN = ')'
-LCID = 'lcid'
-EOF = 'eof'
+LAMBDA, DOT, LPAREN, RPAREN, LCID, EOF = range(6)
 
 Token = namedtuple('Token', ['type', 'value'])
-
 Ident = namedtuple('Ident', ['id'])
 Appl = namedtuple('Appl', ['lhs', 'rhs'])
 Abst = namedtuple('Abst', ['id', 'body'])
@@ -118,7 +112,22 @@ def test_to_string():
     for inp, out in examples:
         assert to_string(parse(inp)) == out
 
+def is_value(ast):
+    return isinstance(ast, Abst) or isinstance(ast, Ident)
+
+def eval(ast):
+    while True:
+        if isinstance(ast, Appl):
+            if is_value(ast.lhs) and is_value(ast.rhs):
+                ast = subst(...)
+            elif is_value(ast.lhs):
+                ast.rhs = eval(ast.rhs)
+            else:
+                ast.lhs = eval(ast.lhs)
+        else:
+            return ast
 
 if __name__ == '__main__':
-    #print(to_string(Parser(r'\x. \y. z \m. o').parse()))
     test_to_string()
+    expr = parse(r'(\x. y) a')
+    eval(expr)
