@@ -60,15 +60,15 @@ def parse(s):
     assert toks[0].type == EOF
     return result
 
-def to_string(ast, brackets = False, inleft = False):
+def format(ast, brackets = False, inleft = False):
     appl_fmt = '%s %s'
     abst_fmt = r'\%s. %s'
     if brackets:
         appl_fmt = '(%s)' % appl_fmt
         abst_fmt = '(%s)' % abst_fmt
     if isinstance(ast, Appl):
-        lhs = to_string(ast.lhs, brackets, True)
-        rhs = to_string(ast.rhs, brackets, inleft)
+        lhs = format(ast.lhs, brackets, True)
+        rhs = format(ast.rhs, brackets, inleft)
         if isinstance(ast.rhs, Appl) and not brackets:
             return '%s (%s)' % (lhs, rhs)
         return appl_fmt % (lhs, rhs)
@@ -78,27 +78,46 @@ def to_string(ast, brackets = False, inleft = False):
         while isinstance(body, Abst):
             params += [body.id]
             body = body.body
-        body = to_string(body, brackets, False)
+        body = format(body, brackets, False)
         param_str = ' '.join(params)
         if inleft and not brackets:
             return r'(\%s. %s)' % (param_str, body)
         return abst_fmt % (param_str, body)
     return ast.id
 
+def is_value(ast):
+    return isinstance(ast, Abst) or isinstance(ast, Ident)
+
+def subst(id, e, arg):
+    if isinstance(e, Abst):
+        return Abst(e.id, subst(id, e.body, arg))
+    elif isinstance(e, Appl):
+        return Appl(subst(id, e.lhs, arg), subst(id, e.rhs, arg))
+    elif isinstance(e, Ident):
+        if e.id == id:
+            return arg
+        return e
+
+def step(ast):
+    if isinstance(ast, Appl):
+        lhs, rhs = ast
+        if isinstance(lhs, Abst) and is_value(rhs):
+            return subst(lhs.id, lhs.body, rhs)
+
 # See https://www.easycalculation.com/analytical/lambda-calculus.php
-def test_to_string():
-    assert to_string(parse(r'a (\b. a) c')) == r'a (\b. a) c'
-    assert to_string(parse(r'(\b. a) c')) == r'(\b. a) c'
-    assert to_string(parse('(a b) (c d)')) == 'a b (c d)'
-    assert to_string(parse('a (b c)')) == 'a (b c)'
+def test_format():
+    assert format(parse(r'a (\b. a) c')) == r'a (\b. a) c'
+    assert format(parse(r'(\b. a) c')) == r'(\b. a) c'
+    assert format(parse('(a b) (c d)')) == 'a b (c d)'
+    assert format(parse('a (b c)')) == 'a (b c)'
     str3 = r'\x. \y. z \m. o'
-    assert to_string(parse(str3)) == r'\x y. z \m. o'
-    assert to_string(parse(str3), brackets = True) \
+    assert format(parse(str3)) == r'\x y. z \m. o'
+    assert format(parse(str3), brackets = True) \
         == r'(\x y. (z (\m. o)))'
 
     s = 'x y z'
-    assert to_string(parse(s), brackets = True) == '((x y) z)'
-    assert to_string(parse(s)) == 'x y z'
+    assert format(parse(s), brackets = True) == '((x y) z)'
+    assert format(parse(s)) == 'x y z'
 
     examples = [
         (r'(\b. \c. b c (\t. \f. f)) (\t. \f. f)',
@@ -110,24 +129,20 @@ def test_to_string():
         (r'((a (\x. x)) a)', r'a (\x. x) a')
         ]
     for inp, out in examples:
-        assert to_string(parse(inp)) == out
+        assert format(parse(inp)) == out
 
-def is_value(ast):
-    return isinstance(ast, Abst) or isinstance(ast, Ident)
-
-def eval(ast):
-    while True:
-        if isinstance(ast, Appl):
-            if is_value(ast.lhs) and is_value(ast.rhs):
-                ast = subst(...)
-            elif is_value(ast.lhs):
-                ast.rhs = eval(ast.rhs)
-            else:
-                ast.lhs = eval(ast.lhs)
-        else:
-            return ast
+def test_step():
+    examples = [
+        (r'(\x. x) y', 'y'),
+        (r'(\x. z) y', 'z'),
+        (r'(\x. x x) y', 'y y'),
+        (r'(\x. (\y. k)) k', '\y. k')
+        ]
+    for inp, out in examples:
+        expr = parse(inp)
+        expr = step(expr)
+        assert format(expr) == out
 
 if __name__ == '__main__':
-    test_to_string()
-    expr = parse(r'(\x. y) a')
-    eval(expr)
+    test_format()
+    test_step()
