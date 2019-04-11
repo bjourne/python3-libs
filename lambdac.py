@@ -95,7 +95,7 @@ def freevars(e):
     if isinstance(e, Abst):
         return freevars(e.body) - set([e.id])
     if isinstance(e, Appl):
-        return freevars(e.lhs) + freevars(e.rhs)
+        return freevars(e.lhs) | freevars(e.rhs)
     if isinstance(e, Ident):
         return set([e.id])
 
@@ -109,9 +109,6 @@ def newid(id, ast):
         i = (ascii_lowercase.find(id) + 1) % n
         return newid(ascii_lowercase[i], ast)
     return id
-
-def is_value(ast):
-    return isinstance(ast, Abst) or isinstance(ast, Ident)
 
 def subst(id, e, arg):
     if isinstance(e, Abst):
@@ -128,16 +125,42 @@ def subst(id, e, arg):
             return arg
         return e
 
-def step(ast):
-    if isinstance(ast, Appl):
-        lhs, rhs = ast
-        if isinstance(lhs, Abst) and is_value(rhs):
+def step(e):
+    if isinstance(e, Appl):
+        lhs, rhs = e
+        # Do stuff with the left branch if possible, otherwise work on
+        # the right side.
+        if isinstance(lhs, Abst):
             return subst(lhs.id, lhs.body, rhs)
-        elif is_value(lhs):
-            print('left value')
-        else:
-            return Appl(step(lhs), rhs)
+        elif isinstance(lhs, Appl):
+            lhs = step(lhs)
+            return Appl(lhs, rhs) if lhs else None
+        rhs = step(rhs)
+        return Appl(lhs, rhs) if rhs else None
+    elif isinstance(e, Abst):
+        body = step(e.body)
+        return Abst(e.id, body) if body else None
+    return None
+
+def eval(e, verbose = False):
+    while True:
+        if verbose:
+            print(format(e))
+        e2 = step(e)
+        if not e2:
+            break
+        if e == e2:
+            if verbose:
+                print('Infinite recursion detected!')
+            break
+        e = e2
+    return e
 
 if __name__ == '__main__':
-    expr = parse(r'(\f y. f y) (\x. y) q')
-    print(format(step(step(step(expr)))))
+    expr = parse(r'(\x. x x) (\x. x x)')
+    eval(expr, verbose = True)
+
+
+    # expr = parse(r'(\z. z) ((\s. \z. s z) s z)')
+    # print(format(step(expr)))
+    #eval(expr, verbose = True)
