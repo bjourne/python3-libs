@@ -1,0 +1,26 @@
+: printf2 swap { ( char* int -- ) printf } ;
+
+: puts { ( char* -- ) puts } ;
+
+: print_int "int = %d\n" printf2 ;
+
+: 2drop drop drop ;
+: nip swap drop ;
+: if ? call ;
+
+: print_arg
+    deref puts ;
+
+: repeat
+    dup [
+        1 -
+        2dup print_arg
+        repeat
+    ] [ 2drop ] if ;
+
+: times
+    over 0 = [ 2drop ] [ dup call swap 1 - swap times ] if ;
+
+: main2 swap repeat ;
+
+: main drop 22 [ "hi" puts ] times ;
