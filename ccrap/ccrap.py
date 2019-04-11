@@ -6,9 +6,27 @@
 # python ccrap.py -f test.ccrap | gcc -O3 -o main -xc - && ./main
 #
 # It is not meant to be taken seriously.
+#
+# FAQ
+# ===
+#
+# Why so many intrinsics?
+# -----------------------
+# It is an easy way to improve the code clang and gcc emits.
+#
+# What is missing?
+# ----------------
+# Comments and lots more things.
+#
+# Dips or something
+# -----------------
+# Required by while-loops?
 from argparse import ArgumentParser
 from codecs import open
 from re import findall
+from sys import exit
+
+from ast import *
 
 COUNTERS = {'tempvar' : 0, 'lambda' : 0}
 def hit_counter(counter):
@@ -31,7 +49,7 @@ FMT_FWD_DECL = 'static int %s(cell stack[256], int top);'
 
 FMT_DEF = '''static int
 %s(cell stack[256], int top) {
-    %s
+%s
     return top;
 }'''
 
@@ -62,62 +80,86 @@ main(int argc, char* argv[]) {
     return 0;
 }''' % prefix_name('main')
 
-def push_literal(tok):
-    return [
-        'top++;',
-        'stack[top] = (cell)%s;' % tok
-    ]
-
-def push_call(tok):
-    return ['top = %s(stack, top);' % prefix_name(tok)]
-
 ########################################################################
 # Stack shuffling
 ########################################################################
-def emit_swap():
+def emit_swap(body):
     var = generate_name('tempvar')
-    return [
+    body.append(Custom([
         'cell %s = stack[top];' % var,
         'stack[top] = stack[top - 1];',
         'stack[top - 1] = %s;' % var
-    ]
+    ]))
+    return True
 
-def emit_drop():
-    return ['top--;']
+def emit_swapd(body):
+    var = generate_name('tempvar')
+    body.append(Custom([
+        'cell %s = stack[top - 1];' % var,
+        'stack[top - 1] = stack[top - 2];',
+        'stack[top - 2] = %s;' % var
+    ]))
+    return True
 
-def emit_dup():
-    return [
+
+def emit_drop(body):
+    body.append(Custom(['top--;']))
+    return True
+
+def emit_dup(body):
+    body.append(Custom([
         'stack[top + 1] = stack[top];',
         'top++;'
-        ]
+        ]))
+    return True
 
-def emit_dupd():
-    return [
+def emit_dupd(body):
+    body.append(Custom([
         'stack[top + 1] = stack[top];',
         'stack[top] = stack[top - 1];',
         'top++;'
-        ]
+        ]))
+    return True
 
-def emit_tuck():
-    return [
+def emit_tuck(body):
+    body.append(Custom([
         'stack[top + 1] = stack[top];',
         'stack[top] = stack[top - 1];',
         'stack[top - 1] = stack[top + 1];',
         'top++;'
-        ]
+        ]))
+    return True
 
-def emit_2dup():
-    return [
+def emit_2dup(body):
+    body.append(Custom([
         'stack[top + 1] = stack[top - 1];',
         'stack[top + 2] = stack[top];',
         'top += 2;'
-        ]
+        ]))
+    return True
 
-def emit_over():
-    return [
+def emit_over(body):
+    body.append(Custom([
         'stack[top + 1] = stack[top - 1];',
         'top++;'
-        ]
+        ]))
+    return True
+
+def emit_pick(body):
+    body.append(Custom([
+        'stack[top + 1] = stack[top - 2];',
+        'top++;'
+        ]))
+    return True
+
+def emit_spin(body):
+    var = generate_name('tempvar')
+    body.append(Custom([
+        'cell %s = stack[top];' % var,
+        'stack[top] = stack[top - 2];',
+        'stack[top - 2] = %s;' % var
+        ]))
+    return True
 
 ########################################################################
 # C interop
@@ -131,48 +173,109 @@ def emit_deref():
 ########################################################################
 # Conditions & calls
 ########################################################################
-def emit_call():
-    return [
+def emit_call(body):
+    body.append(Custom([
         'top--;',
         'top = ((quot_ptr *)(stack[top + 1]))(stack, top);'
-        ]
+    ]))
+    return True
 
-def emit_cond():
-    return [
+def emit_cond(body):
+    body.append(Custom([
         'stack[top - 2] = stack[top - 2] ? stack[top - 1] : stack[top];',
         'top -= 2;'
-    ]
+    ]))
+    return True
 
 ########################################################################
 # Arithmetic intrinsics
 ########################################################################
-def emit_arith(ch):
-    return [
+def emit_arith(body, ch):
+    body.append(Custom([
         'stack[top - 1] %s= stack[top];' % ch,
         'top--;'
-    ]
+    ]))
+    return True
 
 ########################################################################
 # Comparisons
 ########################################################################
-def emit_cmp(ch):
-    return [
+def emit_cmp(body, ch):
+    body.append(Custom([
         'stack[top - 1] = stack[top - 1] %s stack[top];' % ch,
         'top--;'
-        ]
+        ]))
+    return True
+
+########################################################################
+# Auxilliary intrinsics for optimization
+########################################################################
+def emit_if(body):
+    if not isinstance(body[-1], Definition) or \
+       not isinstance(body[-2], Definition):
+        return False
+    false = body.pop()
+    true = body.pop()
+    block = [
+        'top--;',
+        'if (stack[top + 1]) {'
+    ]
+    block += true.emit_body()
+    block += ['} else {']
+    block += false.emit_body()
+    block += ['}']
+    body.append(Custom(block))
+    return True
+
+def emit_times(body):
+    if not isinstance(body[-1], Definition) or \
+       not isinstance(body[-2], IntLiteral):
+        return False
+    quot = body.pop()
+    n = body.pop()
+    var = generate_name('tempvar')
+    for_tmpl = 'for (int %s = 0; %s < %s; %s++) {'
+    block = [for_tmpl % (var, var, n.lit, var)]
+    block += quot.emit_body()
+    block += ['}']
+    body.append(Custom(block))
+    return True
+
+def emit_while(body):
+    if not isinstance(body[-1], Definition) or \
+       not isinstance(body[-2], Definition):
+        return False
+    loop = body.pop()
+    test = body.pop()
+    block = ['while (1) {']
+    block += test.emit_body()
+    block += [
+        '    top--;',
+        '    if (!stack[top + 1]) {',
+        '        top--;',
+        '        break;',
+        '    }'
+    ]
+    block += loop.emit_body()
+    block += ['}']
+    body.append(Custom(block))
+    return True
 
 intrinsics = {
     # Conditions & calls
     'call' : emit_call,
     '?' : emit_cond,
 
+
     # Comparisons
-    '=' : lambda: emit_cmp('=='),
-    '>' : lambda: emit_cmp('>'),
+    '=' : lambda b: emit_cmp(b, '=='),
+    '!=' : lambda b: emit_cmp(b, '!='),
+    '>' : lambda b: emit_cmp(b, '>'),
 
     # Arithmetic
-    '+' : lambda: emit_arith('+'),
-    '-' : lambda: emit_arith('-'),
+    '*' : lambda b: emit_arith(b, '*'),
+    '+' : lambda b: emit_arith(b, '+'),
+    '-' : lambda b: emit_arith(b, '-'),
 
     # C-compat
     'deref' : emit_deref,
@@ -183,8 +286,16 @@ intrinsics = {
     'dupd' : emit_dupd,
     'drop' : emit_drop,
     'over' : emit_over,
+    'pick' : emit_pick,
+    'spin' : emit_spin,
     'swap' : emit_swap,
-    'tuck' : emit_tuck
+    'swapd' : emit_swapd,
+    'tuck' : emit_tuck,
+
+    # Auxilliary intrinsics for optimization
+    #'if' : emit_if,
+    'times' : emit_times
+    #'while' : emit_while
     }
 
 ########################################################################
@@ -202,46 +313,35 @@ c_decls = set()
 # Token buffer
 toks = []
 
-def parse_effect():
-    inputs = []
-    while True:
-        tok = toks.pop(0)
-        if tok == '--':
-            break
-        inputs.append(tok)
-    outputs = []
-    while True:
-        tok = toks.pop(0)
-        if tok == ')':
-            break
-        outputs.append(tok)
-    return (inputs, outputs)
-
 def parse_c_call():
-    assert toks.pop(0) == '('
-    inputs, outputs = parse_effect()
+    return_type = toks.pop(0)
     name = toks.pop(0)
-    assert toks.pop(0) == '}'
+    assert toks.pop(0) == '('
+    types = []
+    while True:
+        t = []
+        while toks[0] not in (',', ')'):
+            t.append(toks.pop(0))
+        types.append(' '.join(t))
+        if toks.pop(0) == ')':
+            break
 
-    n_args = len(inputs)
-
-    c_decl = FMT_CDECL % (name, ', '.join(inputs))
+    c_decl = FMT_CDECL % (name, ', '.join(types))
     c_decls.add(c_decl)
 
-    # Format args
-    fmt_ref_stack = '(%s)stack[top - %d]'
-    inputs = [(n_args - 1 - i, t) for (i, t) in enumerate(inputs)]
-    inputs = [fmt_ref_stack % (t, i) for (i, t) in inputs]
-    return ['%s(%s); top -= %d;' % (name, ', '.join(inputs), n_args)]
+    n_params = toks.pop(0)
+
+    assert toks.pop(0) == '}'
+    if types[-1] == '...':
+        n_params = int(n_params)
+        types = types[:-1] + ['void *'] * n_params
+    return CCall(name, types)
 
 def parse_quotation():
     body = parse_body(']')
     name = generate_name('lambda')
-    funcs[name] = body
-    return [
-        'top++;',
-        'stack[top] = (cell)&%s;' % name
-        ]
+    funcs[name] = Definition(name, body)
+    return funcs[name]
 
 def parse_body(end):
     body = []
@@ -250,19 +350,24 @@ def parse_body(end):
         if tok == end:
             return body
         elif tok == '{':
-            body.extend(parse_c_call())
+            body.append(parse_c_call())
         elif tok == '[':
-            body.extend(parse_quotation())
-        elif tok[0] == '"' or tok.isdigit():
-            body.extend(push_literal(tok))
-        elif tok in intrinsics:
-            body.extend(intrinsics[tok]())
+            body.append(parse_quotation())
+        elif tok[0] == '"':
+            body.append(StringLiteral(tok))
+        elif tok.isdigit():
+            body.append(IntLiteral(int(tok)))
         else:
-            body.extend(push_call(tok))
+            handled = False
+            if tok in intrinsics:
+                handled = intrinsics[tok](body)
+            if not handled:
+                body.append(Call(prefix_name(tok)))
 
 def parse_def():
     name = prefix_name(toks.pop(0))
-    funcs[name] = parse_body(';')
+    body = parse_body(';')
+    funcs[name] = Definition(name, body)
 
 def parse():
     while toks:
@@ -270,10 +375,13 @@ def parse():
         if tok == ':':
             parse_def()
 
-    decls = '\n'.join(FMT_FWD_DECL % n for n in funcs.keys())
-    defs = '\n\n'.join(FMT_DEF % (n, '\n    '.join(b))
-                       for (n, b) in funcs.items())
-    print(FMT_FILE % ('\n'.join(c_decls), decls, defs))
+    sorted_funcs = list(sorted(funcs.items()))
+    decls = '\n'.join(FMT_FWD_DECL % n for (n, b) in sorted_funcs)
+
+    defs = [FMT_DEF % (f.name, '\n'.join(f.emit_body()))
+            for (n, f) in sorted_funcs]
+    defs_text = '\n\n'.join(defs)
+    print(FMT_FILE % ('\n'.join(c_decls), decls, defs_text))
 
 def main():
     global toks

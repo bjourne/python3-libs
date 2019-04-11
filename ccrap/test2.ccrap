@@ -1,0 +1,23 @@
+: printf4
+    swap { void printf ( const char* , ... ) 4 } ;
+
+: printf2
+    swap { void printf ( const char* , ... ) 2 } ;
+
+: puts
+    { void puts ( const char* ) _ } ;
+
+: print_things
+    "%s %s %s %s\n" "one" "two" "three" "four" printf4 ;
+
+: 2drop
+    drop drop ;
+
+: if
+    ? call ;
+
+: times
+    over 0 = [ 2drop ] [ dup call swap 1 - swap times ] if ;
+
+: main
+    2drop 22 [ "hi" puts ] times ;

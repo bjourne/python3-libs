@@ -1,26 +1,26 @@
-: printf2 swap { ( char* int -- ) printf } ;
+: puts
+    { void puts ( const char* ) _ } ;
 
-: puts { ( char* -- ) puts } ;
-
-: print_int "int = %d\n" printf2 ;
+: printf1
+    swap { void printf ( const char* , ... ) 1 } ;
 
 : 2drop drop drop ;
-: nip swap drop ;
-: if ? call ;
 
-: print_arg
-    deref puts ;
+: 3drop 2drop drop ;
 
-: repeat
-    dup [
-        1 -
-        2dup print_arg
-        repeat
-    ] [ 2drop ] if ;
+: if
+    ? call ;
 
 : times
     over 0 = [ 2drop ] [ dup call swap 1 - swap times ] if ;
 
-: main2 swap repeat ;
+: fac
+    dup 1 = [ drop 1 ] [ dup 1 - fac * ] if ;
 
-: main drop 22 [ "hi" puts ] times ;
+: while
+    swap swapd
+    tuck call
+    [ pick call spin while ] [ 3drop ] if ;
+
+: main
+    2drop 33 7 [ dup 0 != ] [ 1 - ] while "%d\n" printf1 ;
