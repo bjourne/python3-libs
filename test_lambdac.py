@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2019 Björn Lindqvist <bjourne@gmail.com>
+# Copyright (C) 2019 Björn Lindqvist <bjourne@gmail.com>
 from lambdac import *
 
 # See https://www.easycalculation.com/analytical/lambda-calculus.php
