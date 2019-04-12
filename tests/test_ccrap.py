@@ -72,51 +72,57 @@ def test_parser():
          [
              ('def',
               ('main',
-               ('effect', (['argc', 'argv'], [])),
-               ('body',
-                [
-                    ('sym', 'drop')
-                ])))
+               (['argc', 'argv'], []),
+               [
+                   ('sym', 'drop')
+               ]))
          ]),
         (': main ( -- ) ;',
          [
              ('def',
               (
                   'main',
-                  ('effect', ([], [])),
-                  ('body',
-                   [
-                   ])))
+                  ([], []),
+                  [
+                  ]))
          ]),
         (': main ( -- ) "shit" ;',
          [
              ('def',
               (
                   'main',
-                  ('effect', ([], [])),
-                  ('body',
-                   [
-                       ('str', '"shit"')
-                   ])))
+                  ([], []),
+                  [
+                      ('str', '"shit"')
+                  ]))
          ]),
         (': times ( a b -- c ) [ [ [ oooh ] ] ] ;',
          [
              ('def',
               ('times',
-               ('effect', (['a', 'b'], ['c'])),
-               ('body',
-                [
-                    ('quot',
-                     [
-                         ('quot',
-                          [
-                              ('quot',
-                               [('sym', 'oooh')])]
-                         )]
-                    )]
-               )))])
+               (['a', 'b'], ['c']),
+               [
+                   ('quot',
+                    [
+                        ('quot',
+                         [
+                             ('quot',
+                              [('sym', 'oooh')])]
+                        )]
+                   )]
+              ))])
     ]
     for text, expected_tree in examples:
         parser = Parser(Lexer(text))
         tree = parser.parse_defs()
         assert tree == expected_tree
+
+def test_parse_cdef():
+    text = 'C: printf4 void printf ( const char* , ... ) 4'
+    parser = Parser(Lexer(text))
+    tree = parser.parse_defs()
+    assert tree == [
+        ('cdef',
+         ('printf4', 'void', 'printf',
+          ('c-args', ['const char*', '...']), 4))
+    ]

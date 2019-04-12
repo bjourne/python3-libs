@@ -1,12 +1,35 @@
 from ccrap.lexer import Lexer
+from ccrap.mangler import mangle
 from ccrap.parser import Parser
 from sys import exit
 
 ########################################################################
-# Name mangling
+# Small set of primitives
 ########################################################################
-def mangle(name):
-    return 'ccrap_%s' % name
+PRIMITIVES = [
+    ('?', [
+        'stack[top - 2] = stack[top - 2] ? stack[top - 1] : stack[top];',
+        'top -= 2;'
+    ]),
+    ('call', [
+        'top--;'
+        'top = ((quot_ptr *)(stack[top + 1]))(stack, top);'
+    ]),
+    ('drop', ['top--;']),
+    ('dup', [
+        'top++;',
+        'stack[top] = stack[top - 1];'
+    ]),
+    ('over', [
+        'top++;',
+        'stack[top] = stack[top - 2];'
+    ]),
+    ('swap', [
+        'stack[top + 1] = stack[top];',
+        'stack[top] = stack[top - 1];',
+        'stack[top - 1] = stack[top + 1];'
+    ])
+]
 
 ########################################################################
 
@@ -33,6 +56,9 @@ typedef int (quot_ptr)(cell stack[256], int top);
 // Forward declarations for words
 %%s
 
+// Primitive words
+%%s
+
 // Word definitions
 %%s
 
@@ -54,23 +80,51 @@ def emit_call(val):
 def emit_literal(val):
     return ['top++;', 'stack[top] = (cell)%s;' % val]
 
-def generate_def(dfn):
-    name = dfn[0]
-    body = dfn[2][1]
+def emit_quot_literal(val):
+    return ['top++;', 'stack[top] = (cell)&%s;' % mangle(val)]
+
+def generate_body(funcs, body):
     insns = []
     for type, val in body:
         if type == 'sym':
             insns.extend(emit_call(val))
         elif type == 'str':
             insns.extend(emit_literal(val))
-    return name, insns
+        elif type == 'quot':
+            name = generate_quot(funcs, val)
+    return insns
 
-def generate_ccall(dfn, c_decls):
+def generate_quot(funcs, body):
+    name = generate_name('quot')
+    funcs[name] = generate_body(funcs, body)
+    return name
+
+def generate_def(funcs, dfn):
+    name = dfn[0]
+    body = dfn[2]
+    insns = []
+    for type, val in body:
+        if type == 'sym':
+            insns.extend(emit_call(val))
+        elif type == 'str':
+            insns.extend(emit_literal(val))
+        elif type == 'quot':
+            quot_name = generate_quot(funcs, val)
+            insns.extend(emit_quot_literal(quot_name))
+    funcs[name] = insns
+
+def generate_ccall(funcs, dfn, c_decls):
     name = dfn[0]
     ret = dfn[1]
     c_name = dfn[2]
     types = dfn[3][1]
     n_var_args = dfn[4]
+
+    # First generate text for the c_decl
+    c_decl = '%s %s(%s);' % (ret, c_name, ', '.join(types))
+    c_decls[c_name] = c_decl
+
+    # Then calling instructions
     if types[-1] == '...':
         types = types[:-1] + ['void *'] * n_var_args
     n_args = len(types)
@@ -82,22 +136,19 @@ def generate_ccall(dfn, c_decls):
     call = '%s(%s);' % (c_name, ', '.join(args))
     drop = 'top -= %d;' % n_args
 
-    # Now generate text for the c_decl
-    c_decl = '%s %s(%s);' % (ret, c_name, ', '.join(types))
-    c_decls[c_name] = c_decl
+    funcs[name] = [call, drop]
 
-    return name, [call, drop]
+def format_insns(insns):
+    return '\n'.join('    %s' % insn for insn in insns)
 
 def generate_vocab(defs):
     funcs = {}
     c_decls = {}
     for type, df in defs:
         if type == 'def':
-            name, insns = generate_def(df)
-            funcs[name] = insns
+            generate_def(funcs, df)
         elif type == 'cdef':
-            name, insns = generate_ccall(df, c_decls)
-            funcs[name] = insns
+            generate_ccall(funcs, df, c_decls)
 
     # C declarations text
     c_decls_fwd_text = '\n'.join(v for (k, v) in sorted(c_decls.items()))
@@ -109,23 +160,34 @@ def generate_vocab(defs):
         for (k, v) in sorted_funcs)
 
     # Word definitions
-    word_defs_text = '\n'.join(
-        FMT_WORD % (mangle(k), '\n'.join(
-            '    %s' % line for line in v
-        ))
-        for (k, v) in sorted_funcs)
+    word_defs_text = '\n'.join(FMT_WORD % (mangle(k), format_insns(v))
+                               for (k, v) in sorted_funcs)
+
+    # Primitives
+    primitives = [
+        ('drop', ['top--;'])
+        ]
+    primitives = [FMT_WORD % (mangle(name), format_insns(insns))
+                  for (name, insns) in PRIMITIVES]
+    primitives_text = '\n'.join(primitives)
 
     vocab_fmt = FMT_VOCAB.strip() % mangle('main')
 
     return vocab_fmt % (c_decls_fwd_text,
                         word_decls_text,
+                        primitives_text,
                         word_defs_text)
 
 if __name__ == '__main__':
     text = """
-C: printf0 void printf ( const char* , ... ) 0
+C: printf0 int printf ( const char* , ... ) 0
 
-: main ( argc argv -- ) "hello, world\\n" printf0 ;
+C: puts int puts ( const char* ) 0
+
+: 2drop ( x y -- )
+    drop drop ;
+
+: main ( argc argv -- ) 2drop 0 "x" "y" ? puts ;
 """
     parser = Parser(Lexer(text))
     defs = parser.parse_defs()

@@ -78,7 +78,7 @@ class Parser:
         self.match_token('(')
         lhs = self.parse_until('--')
         rhs = self.parse_until(')')
-        return 'effect', (lhs, rhs)
+        return (lhs, rhs)
 
     def parse_body(self, stop_sym):
         """Parses definition bodies and quotations."""
@@ -98,34 +98,34 @@ class Parser:
     def parse_def(self):
         _, name = self.next_token()
         effect = self.parse_effect()
-        body = 'body', self.parse_body(';')
+        body = self.parse_body(';')
         return 'def', (name, effect, body)
 
-    def parse_c_def_args(self):
+    def parse_cdef_args(self):
         self.match_token('(')
         args = []
         while True:
             last, arg = self.parse_until_any([')', ','])
             if arg:
-                args.append(arg)
+                args.append(' '.join(arg))
             if last == ')':
                 return 'c-args', args
 
-    def parse_c_def(self):
-        name = self.next_token()
-        ret = self.next_token()
-        c_name = self.next_token()
-        c_args = self.parse_c_def_args()
+    def parse_cdef(self):
+        _, name = self.next_token()
+        _, ret = self.next_token()
+        _, c_name = self.next_token()
+        c_args = self.parse_cdef_args()
         n_var_args = self.parse_int()
         if n_var_args < 0:
             self.wrong_token(n_args, 'a non-negative integer')
-        return 'c-call', (name, ret, c_name, c_args, n_var_args)
+        return 'cdef', (name, ret, c_name, c_args, n_var_args)
 
     def parse_defs(self):
         defs = []
         def_handlers = {
             ':' : self.parse_def,
-            'C:' : self.parse_c_def
+            'C:' : self.parse_cdef
             }
 
         while True:
@@ -144,7 +144,7 @@ class Parser:
 
 if __name__ == '__main__':
     text = """
-: times ( a b -- c ) [ [ [ oooh ] ] ] ;
+: times ( a b -- c ) oooh ;
 """
     parser = Parser(Lexer(text))
     print(parser.parse_defs())
