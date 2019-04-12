@@ -1,4 +1,5 @@
 from ccrap.lexer import Lexer, LexerError
+from ccrap.parser import Parser
 
 def test_tokens():
     examples = [
@@ -12,7 +13,7 @@ def test_tokens():
     ]
     for inp, out in examples:
         lexer = Lexer(inp)
-        toks = [t for t, lc in lexer.tokenize()]
+        toks = [t[1] for t, lc in lexer.tokenize()]
         assert toks == out
 
 def test_weird_tokens():
@@ -23,7 +24,7 @@ def test_weird_tokens():
         ]
     for inp, out in examples:
         lexer = Lexer(inp)
-        toks = [t for t, lc in lexer.tokenize()]
+        toks = [t[1] for t, lc in lexer.tokenize()]
         assert toks == out
 
 def test_line_cols():
@@ -46,7 +47,7 @@ def test_comments():
         ]
     for inp, out in examples:
         lexer = Lexer(inp)
-        toks = [t for t, lc in lexer.tokenize()]
+        toks = [t[1] for t, lc in lexer.tokenize()]
         assert toks == out
 
 def test_errors():
@@ -64,3 +65,58 @@ def test_errors():
             assert False
         except LexerError as e:
             assert e.at == error_at
+
+def test_parser():
+    examples = [
+        (': main ( argc argv -- ) drop ;',
+         [
+             ('def',
+              ('main',
+               ('effect', (['argc', 'argv'], [])),
+               ('body',
+                [
+                    ('sym', 'drop')
+                ])))
+         ]),
+        (': main ( -- ) ;',
+         [
+             ('def',
+              (
+                  'main',
+                  ('effect', ([], [])),
+                  ('body',
+                   [
+                   ])))
+         ]),
+        (': main ( -- ) "shit" ;',
+         [
+             ('def',
+              (
+                  'main',
+                  ('effect', ([], [])),
+                  ('body',
+                   [
+                       ('str', '"shit"')
+                   ])))
+         ]),
+        (': times ( a b -- c ) [ [ [ oooh ] ] ] ;',
+         [
+             ('def',
+              ('times',
+               ('effect', (['a', 'b'], ['c'])),
+               ('body',
+                [
+                    ('quot',
+                     [
+                         ('quot',
+                          [
+                              ('quot',
+                               [('sym', 'oooh')])]
+                         )]
+                    )]
+               )))])
+    ]
+    for text, expected_tree in examples:
+        parser = Parser(Lexer(text))
+        tree = parser.parse_defs()
+        assert tree == expected_tree

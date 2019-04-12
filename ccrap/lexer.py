@@ -41,6 +41,7 @@ class Lexer:
         f = self.i
         at = self.line, self.col
         if self.text[f] == '"':
+            type = 'str'
             self.consume_char()
             while self.i < self.n and self.text[self.i] not in '"\n':
                 if self.consume_char() == "\\":
@@ -49,14 +50,15 @@ class Lexer:
                  self.unfinished_string(f, at)
             self.consume_char()
         else:
+            type = 'sym'
             while self.i < self.n and self.text[self.i] not in WS:
                 self.consume_char()
-        tok = self.text[f:self.i]
-        if tok == '!':
+        val = self.text[f:self.i]
+        if val == '!':
             while self.i < self.n and self.text[self.i] != '\n':
                 self.consume_char()
             return self.next()
-        return tok, at
+        return (type, val), at
 
     def tokenize(self):
         while True:
