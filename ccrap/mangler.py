@@ -7,7 +7,15 @@ C_SAFE = ascii_letters + digits + '_'
 NAME_2_MANGLED = {}
 MANGLED_2_NAME = {}
 
-TRANS = {'?' : 'qmark', '!' : 'excl', '-' : '_'}
+TRANS = {
+    '=' : '_eq',
+    '?' : '_qm',
+    '!' : '_em',
+    '-' : '_sub',
+    '+' : '_add',
+    '*' : '_mul',
+    '/' : '_div'
+}
 
 def encode(ch):
     if ch in C_SAFE:

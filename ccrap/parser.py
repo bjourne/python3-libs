@@ -80,6 +80,13 @@ class Parser:
         rhs = self.parse_until(')')
         return (lhs, rhs)
 
+    def parse_token(self, type, val):
+        if val == '[':
+            return 'quot', self.parse_body(']')
+        elif val.isdigit():
+            return 'int', int(val)
+        return type, val
+
     def parse_body(self, stop_sym):
         """Parses definition bodies and quotations."""
         body = []
@@ -90,10 +97,7 @@ class Parser:
             type, val = tok
             if val == stop_sym:
                 return body
-            elif val == '[':
-                body.append(('quot', self.parse_body(']')))
-            else:
-                body.append(tok)
+            body.append(self.parse_token(type, val))
 
     def parse_def(self):
         _, name = self.next_token()

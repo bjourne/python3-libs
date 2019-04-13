@@ -126,3 +126,9 @@ def test_parse_cdef():
          ('printf4', 'void', 'printf',
           ('c-args', ['const char*', '...']), 4))
     ]
+
+def test_parse_body():
+    text = '10 20 ;'
+    parser = Parser(Lexer(text))
+    body = parser.parse_body(';')
+    assert body == [('int', 10), ('int', 20)]

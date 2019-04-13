@@ -1,21 +1,27 @@
 from ccrap.lexer import Lexer
-from ccrap.mangler import mangle
+from ccrap.mangler import generate_name, mangle
 from ccrap.parser import Parser
-from sys import exit
 
 ########################################################################
 # Small set of primitives
 ########################################################################
 PRIMITIVES = [
     ('?', [
-        'stack[top - 2] = stack[top - 2] ? stack[top - 1] : stack[top];',
+        'stack[top - 2] = (stack[top - 2] ? stack[top - 1] : stack[top]);',
         'top -= 2;'
     ]),
     ('call', [
-        'top--;'
+        'top--;',
         'top = ((quot_ptr *)(stack[top + 1]))(stack, top);'
     ]),
+    # Stack shuffling
     ('drop', ['top--;']),
+    ('dip', [
+        'top -= 2;',
+        'cell dip_save = stack[top + 1];',
+        'top = ((quot_ptr *)(stack[top + 2]))(stack, top);',
+        'stack[++top] = dip_save;'
+    ]),
     ('dup', [
         'top++;',
         'stack[top] = stack[top - 1];'
@@ -30,6 +36,27 @@ PRIMITIVES = [
         'stack[top - 1] = stack[top + 1];'
     ])
 ]
+ARITH_OPS = '+-*/'
+for op in ARITH_OPS:
+    PRIMITIVES.append(
+        (op, [
+            'stack[top - 1] %s= stack[top];' % op,
+            'top--;'
+        ])
+    )
+
+CMP_OPS = [
+    ('=', '=='),
+    ('>', '>'),
+    ('<', '<')
+]
+for name, c_name in CMP_OPS:
+    PRIMITIVES.append(
+        (name, [
+            'stack[top - 1] = stack[top - 1] %s stack[top];' % c_name,
+            'top--;'
+        ])
+    )
 
 ########################################################################
 
@@ -78,10 +105,10 @@ def emit_call(val):
     return ['top = %s(stack, top);' % mangle(val)]
 
 def emit_literal(val):
-    return ['top++;', 'stack[top] = (cell)%s;' % val]
+    return ['stack[++top] = (cell)%s;' % val]
 
 def emit_quot_literal(val):
-    return ['top++;', 'stack[top] = (cell)&%s;' % mangle(val)]
+    return ['stack[++top] = (cell)&%s;' % mangle(val)]
 
 def generate_body(funcs, body):
     insns = []
@@ -90,8 +117,11 @@ def generate_body(funcs, body):
             insns.extend(emit_call(val))
         elif type == 'str':
             insns.extend(emit_literal(val))
+        elif type == 'int':
+            insns.extend(emit_literal(val))
         elif type == 'quot':
-            name = generate_quot(funcs, val)
+            quot_name = generate_quot(funcs, val)
+            insns.extend(emit_quot_literal(quot_name))
     return insns
 
 def generate_quot(funcs, body):
@@ -102,16 +132,7 @@ def generate_quot(funcs, body):
 def generate_def(funcs, dfn):
     name = dfn[0]
     body = dfn[2]
-    insns = []
-    for type, val in body:
-        if type == 'sym':
-            insns.extend(emit_call(val))
-        elif type == 'str':
-            insns.extend(emit_literal(val))
-        elif type == 'quot':
-            quot_name = generate_quot(funcs, val)
-            insns.extend(emit_quot_literal(quot_name))
-    funcs[name] = insns
+    funcs[name] = generate_body(funcs, body)
 
 def generate_ccall(funcs, dfn, c_decls):
     name = dfn[0]
@@ -182,12 +203,32 @@ if __name__ == '__main__':
     text = """
 C: printf0 int printf ( const char* , ... ) 0
 
+C: printf1 int printf ( const char* , ... ) 1
+
 C: puts int puts ( const char* ) 0
+
+: print-int ( n -- )
+    "%d\\n" swap printf1 ;
 
 : 2drop ( x y -- )
     drop drop ;
 
-: main ( argc argv -- ) 2drop 0 "x" "y" ? puts ;
+: if ( bool quot quot -- ... )
+    ? call ;
+
+: times ( n quot -- ... )
+    over 0 =
+    [ 2drop ] [
+        swap over
+        [ call ] 2dip
+        swap 1 - swap times
+    ] if ;
+
+: 2dip ( x y quot -- x y )
+    swap [ dip ] dip ;
+
+: main ( argc argv -- )
+    2drop 20 20 [ 1 - dup print-int ] times drop ;
 """
     parser = Parser(Lexer(text))
     defs = parser.parse_defs()

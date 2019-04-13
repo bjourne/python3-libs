@@ -1,3 +1,5 @@
+C: printf4 void printf ( const char* , ... ) 4
+
 : printf4
     swap { void printf ( const char* , ... ) 4 } ;
 
