@@ -42,7 +42,7 @@ def mangle(name):
         MANGLED_2_NAME[new_name] = name
     return NAME_2_MANGLED[name]
 
-COUNTERS = {'tempvar' : 0, 'quot' : 0}
+COUNTERS = {'var' : 0, 'quot' : 0}
 def hit_counter(counter):
     val = COUNTERS[counter]
     COUNTERS[counter] += 1
