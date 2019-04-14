@@ -1,26 +1,36 @@
-: puts
-    { void puts ( const char* ) _ } ;
+! TODO: understand what "inconsistent dll linkage" means
+C: printf0 int printf ( const char* , ... ) 0
+C: printf1 int printf ( const char* , ... ) 1
+C: puts int puts ( const char* ) 0
 
-: printf1
-    swap { void printf ( const char* , ... ) 1 } ;
+: print-int ( i -- )
+    "%lld\n" swap printf1 drop ;
 
-: 2drop drop drop ;
+: 2drop ( x y -- )
+    drop drop ;
 
-: 3drop 2drop drop ;
+: 2dip ( x y quot -- x y )
+    swap [ dip ] dip ;
 
-: if
-    ? call ;
+: times ( n quot -- ... )
+    over 0 = [ 2drop ] [
+        swap over
+        [ call ] 2dip
+        swap 1 - swap times
+    ] if ;
 
-: times
-    over 0 = [ 2drop ] [ dup call swap 1 - swap times ] if ;
+: fib ( n -- n' )
+    dup 2 < [ ] [
+        dup 1 - fib
+        swap 2 - fib +
+    ] if ;
 
-: fac
-    dup 1 = [ drop 1 ] [ dup 1 - fac * ] if ;
+: fib-iter ( n -- n' )
+    dup 2 < [ ] [
+        [ 0 1 ] dip [
+            swap dup [ + ] dip
+        ] times drop
+    ] if ;
 
-: while
-    swap swapd
-    tuck call
-    [ pick call spin while ] [ 3drop ] if ;
-
-: main
-    2drop 33 7 [ dup 0 != ] [ 1 - ] while "%d\n" printf1 ;
+: main ( argc argv -- )
+    2drop 150 fib-iter print-int ;
