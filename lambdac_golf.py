@@ -1,9 +1,6 @@
 from collections import namedtuple
-from re import findall
+import re
 
-LAM, DOT, LPAREN, RPAREN, LCID, EOF = range(6)
-
-Token = namedtuple('Token', ['type', 'value'])
 Ident = namedtuple('Ident', ['id'])
 Appl = namedtuple('Appl', ['lhs', 'rhs'])
 Abst = namedtuple('Abst', ['id', 'body'])
@@ -11,8 +8,8 @@ Abst = namedtuple('Abst', ['id', 'body'])
 def abst(t):
     t.pop(0)
     params = []
-    while t[0].type != DOT:
-        type, value = t.pop(0)
+    while t[0] != '.':
+        value = t.pop(0)
         params.append(value)
     t.pop(0)
     abst = Abst(params.pop(), term(t))
@@ -21,20 +18,18 @@ def abst(t):
     return abst
 
 def term(t):
-    return abst(t) if t[0].type == LAM else appl(t)
+    return abst(t) if t[0] == '\\' else appl(t)
 
 def atom(t):
-    peek_type = t[0].type
-    if peek_type == LPAREN:
+    if t[0] == '(':
         t.pop(0)
         trm = term(t)
         t.pop(0)
         return trm
-    elif peek_type == LCID:
-        return Ident(t.pop(0).value)
-    elif peek_type == LAM:
+    elif ord('a') <= ord(t[0][0]) <= ord('z'):
+        return Ident(t.pop(0))
+    elif t[0] == '\\':
         return abst(t)
-    return None
 
 def appl(t):
     lhs = atom(t)
@@ -45,12 +40,7 @@ def appl(t):
         lhs = Appl(lhs, rhs)
 
 def parse(s):
-    types = {'\\' : LAM, '.' : DOT, '(' : LPAREN, ')' : RPAREN}
-    parts = findall(r'(\(|\)|\\|[a-z]\w*|\.)', s)
-    #print(parts)
-    toks = [Token(types.get(p, LCID), p) for p in parts]
-    toks.append(Token(EOF, None))
-    return term(toks)
+    return term(re.findall(r'(\(|\)|\\|[a-z]\w*|\.)', s) + ['='])
 
 def format(ast, brackets = False, inleft = False):
     appl_fmt = '%s %s'
