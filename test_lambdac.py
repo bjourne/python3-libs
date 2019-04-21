@@ -52,7 +52,10 @@ def test_step():
         (r'(\x. x x) y', 'y y'),
         (r'(\x. (\y. k)) k', r'\y. k'),
         (r'(\z. z) ((\s. \z. s z) s z)',
-         r'(\s z. s z) s z')
+         r'(\s z. s z) s z'),
+
+        # alpha-renaming
+        (r'(\f. \y. f y) (\x. y) a', r'(\z. (\x. y) z) a')
         ]
     for inp, out in examples:
         expr = parse(inp)
@@ -61,7 +64,7 @@ def test_step():
 
 def test_eval():
     examples = [
-        (r'(\f y. f y) (\x. y) q', 'q'),
+        (r'(\f y. f y) (\x. y) q', 'y'),
         (r'(\n s z. s (n s z)) (\s z. z)',
          r'\s z. s z'),
         (r'(\n. \s. \z. s (n s z)) (\s. \z. s z)',
@@ -82,6 +85,9 @@ def test_eval():
         ]
     for inp, out in examples:
         expr = parse(inp)
+        format_out = format(eval(expr))
+        if out != format_out:
+            print('%s => %s, expected %s' % (inp, format_out, out))
         assert format(eval(expr)) == out
 
 def test_freevars():

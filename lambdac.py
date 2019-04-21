@@ -96,12 +96,15 @@ def freevars(e):
         return freevars(e.body) - set([e.id])
     if isinstance(e, Appl):
         return freevars(e.lhs) | freevars(e.rhs)
-    if isinstance(e, Ident):
-        return set([e.id])
+    return set([e.id])
 
 def rename(e, f, t):
     if isinstance(e, Abst):
         return Abst(e.id, rename(e.body, f, t))
+    if isinstance(e, Appl):
+        return Appl(rename(e.lhs, f, t), rename(e.rhs, f, t))
+    if isinstance(e, Ident):
+        return Ident(t if e.id == f else e.id)
 
 def newid(id, ast):
     if id in freevars(ast):
@@ -117,13 +120,12 @@ def subst(id, e, arg):
             return e
         ren_id = newid(e.id, arg)
         ren_body = rename(e.body, e.id, ren_id)
-        return Abst(e.id, subst(id, e.body, arg))
+        return Abst(ren_id, subst(id, ren_body, arg))
     elif isinstance(e, Appl):
         return Appl(subst(id, e.lhs, arg), subst(id, e.rhs, arg))
-    elif isinstance(e, Ident):
-        if e.id == id:
-            return arg
-        return e
+    if e.id == id:
+        return arg
+    return e
 
 def step(e):
     if isinstance(e, Appl):
@@ -157,8 +159,10 @@ def eval(e, verbose = False):
     return e
 
 if __name__ == '__main__':
-    expr = parse(r'(\x. x x) (\x. x x)')
-    eval(expr, verbose = True)
+
+    expr = parse(r'(\f. \y. f y) (\x. y) a')
+    print(format(step(expr)))
+    #eval(expr, verbose = True)
 
 
     # expr = parse(r'(\z. z) ((\s. \z. s z) s z)')
