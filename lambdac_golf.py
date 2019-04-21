@@ -1,28 +1,27 @@
 from collections import *
 import re
-A,B,y=namedtuple('A',['l','r']),namedtuple('B',['i','b']),type
+A,B,y,c=namedtuple('A',['l','r']),namedtuple('B',['i','b']),type,list.pop
 def ab(t):
-    t.pop(0);p = t.pop(0);t.pop(0)
+    c(t,0);p = c(t,0);c(t,0)
     return B(p,tm(t))
 def tm(t):
     return ab(t)if t[0] == '\\'else ap(t)
 def at(t):
     if t[0] == '(':
-        t.pop(0)
+        c(t,0)
         trm = tm(t)
-        t.pop(0)
+        c(t,0)
         return trm
-    if ord('a')<=ord(t[0][0])<=ord('z'):return t.pop(0)
+    if ord('a')<=ord(t[0][0])<=ord('z'):return c(t,0)
     if t[0]=='\\':return ab(t)
 def ap(t):
-    lhs = at(t)
+    l = at(t)
     while 1:
-        rhs = at(t)
-        if not rhs:
-            return lhs
-        lhs = A(lhs, rhs)
+        r = at(t)
+        if not r:return l
+        l = A(l, r)
 def P(s):
-    return tm(re.findall(r'(\(|\)|\\|[a-z]\w*|\.)', s)+['='])
+    return tm(re.findall(r'(\(|\)|\\|[a-z]\w*|\.)',s)+['='])
 def V(e):o=y(e);return V(e.b)-{e.i} if o==B else V(e.l)|V(e.r)if o==A else{e}
 def R(e,f,t):return B(e.i,R(e.b,f,t)) if y(e)==B else A(R(e.l,f,t),R(e.r,f,t))if y(e)==A else t if e==f else e
 def N(i,e):return N(chr(97+(ord(i[0])-96)%26),e) if i in V(e)else i
@@ -39,19 +38,15 @@ def T(e):
     if o==B:
         return o(e.i, T(e.b))
     raise RuntimeError('hi')
-
 def E(a):
     try: return E(T(a))
     except RuntimeError:
         return a
 def F(e):
     o=y(e)
-    if o==B:
-        return r'(\%s. %s)' % (e.i, F(e.b))
-    if o==A:
-        return r'(%s %s)' % (F(e.l), F(e.r))
+    if o==B:return r'(\%s. %s)'%(e.i,F(e.b))
+    if o==A:return r'(%s %s)'%(F(e.l),F(e.r))
     return e
-
 if __name__ == '__main__':
     expr = P(r'((\a. (\b. (a (a (a b))))) (\ c. (\ d. (c (c d)))))')
     print(F(E(expr)))
