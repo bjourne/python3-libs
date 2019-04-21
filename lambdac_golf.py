@@ -1,6 +1,6 @@
 from collections import *
 import re
-A,B=namedtuple('A',['l','r']),namedtuple('B',['i','b'])
+A,B,y=namedtuple('A',['l','r']),namedtuple('B',['i','b']),type
 def ab(t):
     t.pop(0);p = t.pop(0);t.pop(0)
     return B(p,tm(t))
@@ -23,35 +23,29 @@ def ap(t):
         lhs = A(lhs, rhs)
 def P(s):
     return tm(re.findall(r'(\(|\)|\\|[a-z]\w*|\.)', s)+['='])
-def V(e):o=type(e);return V(e.b)-{e.i} if o==B else V(e.l)|V(e.r)if o==A else{e}
-def R(e, f, t):
-    o=type(e)
-    return o(e.i,R(e.b,f,t)) if o==B else o(R(e.l,f,t),R(e.r,f,t))if o==A else t if e==f else e
-
+def V(e):o=y(e);return V(e.b)-{e.i} if o==B else V(e.l)|V(e.r)if o==A else{e}
+def R(e,f,t):return B(e.i,R(e.b,f,t)) if y(e)==B else A(R(e.l,f,t),R(e.r,f,t))if y(e)==A else t if e==f else e
 def N(i,e):return N(chr(97+(ord(i[0])-96)%26),e) if i in V(e)else i
 def S(i,e,a):
-    o=type(e)
-    if o==B:
-        return e if e.i==i else o(N(e.i,a),S(i,R(e.b,e.i,N(e.i,a)),a))
+    o=y(e)
+    if o==B:return e if e.i==i else o(N(e.i,a),S(i,R(e.b,e.i,N(e.i,a)),a))
     if o==A:return o(S(i,e.l,a),S(i,e.r,a))
     return a if e==i else e
-
 def T(e):
-    o=type(e)
+    o=y(e)
     if o==A:
         l,r=e
-        return S(l.i,l.b,r)if type(l)==B else A(T(l),r)if type(l)==A else o(l,T(r))
+        return S(l.i,l.b,r)if y(l)==B else A(T(l),r)if y(l)==A else o(l,T(r))
     if o==B:
         return o(e.i, T(e.b))
     raise RuntimeError('hi')
 
 def E(a):
-    try:
-        return E(T(a))
+    try: return E(T(a))
     except RuntimeError:
         return a
 def F(e):
-    o=type(e)
+    o=y(e)
     if o==B:
         return r'(\%s. %s)' % (e.i, F(e.b))
     if o==A:
