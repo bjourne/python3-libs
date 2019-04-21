@@ -1,15 +1,14 @@
-from collections import namedtuple
+from collections import *
 import re
 
-Ident = namedtuple('Ident', ['id'])
-Appl = namedtuple('Appl', ['lhs', 'rhs'])
-Abst = namedtuple('Abst', ['id', 'body'])
+A = namedtuple('Appl', ['lhs', 'rhs'])
+B = namedtuple('Abst', ['id', 'body'])
 
 def abst(t):
     t.pop(0)
     p = t.pop(0)
     t.pop(0)
-    return Abst(p, term(t))
+    return B(p, term(t))
 
 def term(t):
     return abst(t) if t[0] == '\\' else appl(t)
@@ -21,7 +20,7 @@ def atom(t):
         t.pop(0)
         return trm
     elif ord('a') <= ord(t[0][0]) <= ord('z'):
-        return Ident(t.pop(0))
+        return t.pop(0)
     elif t[0] == '\\':
         return abst(t)
 
@@ -31,68 +30,65 @@ def appl(t):
         rhs = atom(t)
         if not rhs:
             return lhs
-        lhs = Appl(lhs, rhs)
+        lhs = A(lhs, rhs)
 
 def parse(s):
     return term(re.findall(r'(\(|\)|\\|[a-z]\w*|\.)', s) + ['='])
 
-def fv(e):
-    if isinstance(e, Abst):
-        return fv(e.body) - set([e.id])
-    if isinstance(e, Appl):
-        return fv(e.lhs) | fv(e.rhs)
-    return set([e.id])
+def V(e):
+    o=type(e)
+    return V(e.body)-{e.id} if o==B else V(e.lhs)|V(e.rhs) if o==A else {e}
 
-def rename(e, f, t):
-    if isinstance(e, Abst):
-        return Abst(e.id, rename(e.body, f, t))
-    if isinstance(e, Appl):
-        return Appl(rename(e.lhs, f, t), rename(e.rhs, f, t))
-    return Ident(t if e.id == f else e.id)
+def R(e, f, t):
+    o=type(e)
+    if o==B:
+        return o(e.id, R(e.body, f, t))
+    if o==A:
+        return o(R(e.lhs, f, t), R(e.rhs, f, t))
+    return t if e == f else e
 
 def newid(id,e):
-    if id in fv(e):
+    if id in V(e):
         v=chr(97+(ord(id[0])-96)%26)
         return newid(v,e)
     return id
 
-def subst(id, e, arg):
-    if isinstance(e, Abst):
-        if e.id == id:
-            return e
-        r_id = newid(e.id, arg)
-        r_body = rename(e.body, e.id, r_id)
-        return Abst(r_id, subst(id, r_body, arg))
-    elif isinstance(e, Appl):
-        return Appl(subst(id, e.lhs, arg), subst(id, e.rhs, arg))
-    return arg if e.id == id else e
+def S(id, e, arg):
+    o=type(e)
+    if o==B:
+        if e.id == id: return e
+        rid = newid(e.id, arg)
+        rbody = R(e.body, e.id, rid)
+        return o(rid, S(id, rbody, arg))
+    if o==A:
+        return o(S(id, e.lhs, arg), S(id, e.rhs, arg))
+    return arg if e==id else e
 
-def step(e):
-    if isinstance(e, Appl):
+def T(e):
+    o=type(e)
+    if o==A:
         lhs, rhs = e
-        if isinstance(lhs, Abst):
-            return subst(lhs.id, lhs.body, rhs)
-        elif isinstance(lhs, Appl):
-            lhs = step(lhs)
-            return Appl(lhs, rhs)
-        rhs = step(rhs)
-        return Appl(lhs, rhs)
-    elif isinstance(e, Abst):
-        body = step(e.body)
-        return Abst(e.id, body)
+        if type(lhs)==B:
+            return S(lhs.id, lhs.body, rhs)
+        if type(lhs)==A:
+            return A(T(lhs), rhs)
+        return o(lhs, T(rhs))
+    if o==B:
+        return o(e.id, T(e.body))
     raise RuntimeError('hi')
 
 def E(a):
     try:
-        return E(step(a))
+        return E(T(a))
     except RuntimeError:
         return a
 def F(e):
-    if isinstance(e, Abst):
+    o=type(e)
+    if o==B:
         return r'(\%s. %s)' % (e.id, F(e.body))
-    if isinstance(e, Appl):
+    if o==A:
         return r'(%s %s)' % (F(e.lhs), F(e.rhs))
-    return e.id
+    return e
 
 if __name__ == '__main__':
     expr = parse(r'((\a. (\b. (a (a (a b))))) (\ c. (\ d. (c (c d)))))')
@@ -102,4 +98,6 @@ if __name__ == '__main__':
     expr = parse(r'(\a. a) (\x. x) (\y. y)')
     print(F(E(expr)))
     expr = parse(r'(\hi. hi)')
+    print(F(E(expr)))
+    expr = parse(r'(((\ x. (\ y. x)) (\ a. a)) ((\x. (x x)) (\x. (x x))))')
     print(F(E(expr)))
