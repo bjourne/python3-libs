@@ -1,80 +1,48 @@
 from collections import *
 import re
-
-A = namedtuple('Appl', ['lhs', 'rhs'])
-B = namedtuple('Abst', ['id', 'body'])
-
-def abst(t):
-    t.pop(0)
-    p = t.pop(0)
-    t.pop(0)
-    return B(p, term(t))
-
-def term(t):
-    return abst(t) if t[0] == '\\' else appl(t)
-
-def atom(t):
+A,B=namedtuple('A',['l','r']),namedtuple('B',['i','b'])
+def ab(t):
+    t.pop(0);p = t.pop(0);t.pop(0)
+    return B(p,tm(t))
+def tm(t):
+    return ab(t)if t[0] == '\\'else ap(t)
+def at(t):
     if t[0] == '(':
         t.pop(0)
-        trm = term(t)
+        trm = tm(t)
         t.pop(0)
         return trm
-    elif ord('a') <= ord(t[0][0]) <= ord('z'):
-        return t.pop(0)
-    elif t[0] == '\\':
-        return abst(t)
-
-def appl(t):
-    lhs = atom(t)
+    if ord('a')<=ord(t[0][0])<=ord('z'):return t.pop(0)
+    if t[0]=='\\':return ab(t)
+def ap(t):
+    lhs = at(t)
     while 1:
-        rhs = atom(t)
+        rhs = at(t)
         if not rhs:
             return lhs
         lhs = A(lhs, rhs)
-
-def parse(s):
-    return term(re.findall(r'(\(|\)|\\|[a-z]\w*|\.)', s) + ['='])
-
-def V(e):
-    o=type(e)
-    return V(e.body)-{e.id} if o==B else V(e.lhs)|V(e.rhs) if o==A else {e}
-
+def P(s):
+    return tm(re.findall(r'(\(|\)|\\|[a-z]\w*|\.)', s)+['='])
+def V(e):o=type(e);return V(e.b)-{e.i} if o==B else V(e.l)|V(e.r)if o==A else{e}
 def R(e, f, t):
     o=type(e)
-    if o==B:
-        return o(e.id, R(e.body, f, t))
-    if o==A:
-        return o(R(e.lhs, f, t), R(e.rhs, f, t))
-    return t if e == f else e
+    return o(e.i,R(e.b,f,t)) if o==B else o(R(e.l,f,t),R(e.r,f,t))if o==A else t if e==f else e
 
-def newid(id,e):
-    if id in V(e):
-        v=chr(97+(ord(id[0])-96)%26)
-        return newid(v,e)
-    return id
-
-def S(id, e, arg):
+def N(i,e):return N(chr(97+(ord(i[0])-96)%26),e) if i in V(e)else i
+def S(i,e,a):
     o=type(e)
     if o==B:
-        if e.id == id: return e
-        rid = newid(e.id, arg)
-        rbody = R(e.body, e.id, rid)
-        return o(rid, S(id, rbody, arg))
-    if o==A:
-        return o(S(id, e.lhs, arg), S(id, e.rhs, arg))
-    return arg if e==id else e
+        return e if e.i==i else o(N(e.i,a),S(i,R(e.b,e.i,N(e.i,a)),a))
+    if o==A:return o(S(i,e.l,a),S(i,e.r,a))
+    return a if e==i else e
 
 def T(e):
     o=type(e)
     if o==A:
-        lhs, rhs = e
-        if type(lhs)==B:
-            return S(lhs.id, lhs.body, rhs)
-        if type(lhs)==A:
-            return A(T(lhs), rhs)
-        return o(lhs, T(rhs))
+        l,r=e
+        return S(l.i,l.b,r)if type(l)==B else A(T(l),r)if type(l)==A else o(l,T(r))
     if o==B:
-        return o(e.id, T(e.body))
+        return o(e.i, T(e.b))
     raise RuntimeError('hi')
 
 def E(a):
@@ -85,19 +53,19 @@ def E(a):
 def F(e):
     o=type(e)
     if o==B:
-        return r'(\%s. %s)' % (e.id, F(e.body))
+        return r'(\%s. %s)' % (e.i, F(e.b))
     if o==A:
-        return r'(%s %s)' % (F(e.lhs), F(e.rhs))
+        return r'(%s %s)' % (F(e.l), F(e.r))
     return e
 
 if __name__ == '__main__':
-    expr = parse(r'((\a. (\b. (a (a (a b))))) (\ c. (\ d. (c (c d)))))')
+    expr = P(r'((\a. (\b. (a (a (a b))))) (\ c. (\ d. (c (c d)))))')
     print(F(E(expr)))
-    expr = parse(r'(\f. \y. f y) (\x. y) q')
+    expr = P(r'(\f. \y. f y) (\x. y) q')
     print(F(E(expr)))
-    expr = parse(r'(\a. a) (\x. x) (\y. y)')
+    expr = P(r'(\a. a) (\x. x) (\y. y)')
     print(F(E(expr)))
-    expr = parse(r'(\hi. hi)')
+    expr = P(r'(\hi. hi)')
     print(F(E(expr)))
-    expr = parse(r'(((\ x. (\ y. x)) (\ a. a)) ((\x. (x x)) (\x. (x x))))')
+    expr = P(r'(((\ x. (\ y. x)) (\ a. a)) ((\x. (x x)) (\x. (x x))))')
     print(F(E(expr)))
