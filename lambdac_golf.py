@@ -7,15 +7,9 @@ Abst = namedtuple('Abst', ['id', 'body'])
 
 def abst(t):
     t.pop(0)
-    params = []
-    while t[0] != '.':
-        value = t.pop(0)
-        params.append(value)
+    p = t.pop(0)
     t.pop(0)
-    abst = Abst(params.pop(), term(t))
-    while params:
-        abst = Abst(params.pop(), abst)
-    return abst
+    return Abst(p, term(t))
 
 def term(t):
     return abst(t) if t[0] == '\\' else appl(t)
@@ -41,31 +35,6 @@ def appl(t):
 
 def parse(s):
     return term(re.findall(r'(\(|\)|\\|[a-z]\w*|\.)', s) + ['='])
-
-def format(ast, brackets = False, inleft = False):
-    appl_fmt = '%s %s'
-    abst_fmt = r'\%s. %s'
-    if brackets:
-        appl_fmt = '(%s)' % appl_fmt
-        abst_fmt = '(%s)' % abst_fmt
-    if isinstance(ast, Appl):
-        lhs = format(ast.lhs, brackets, True)
-        rhs = format(ast.rhs, brackets, inleft)
-        if isinstance(ast.rhs, Appl) and not brackets:
-            return '%s (%s)' % (lhs, rhs)
-        return appl_fmt % (lhs, rhs)
-    if isinstance(ast, Abst):
-        params = [ast.id]
-        body = ast.body
-        while isinstance(body, Abst):
-            params += [body.id]
-            body = body.body
-        body = format(body, brackets, False)
-        param_str = ' '.join(params)
-        if inleft and not brackets:
-            return r'(\%s. %s)' % (param_str, body)
-        return abst_fmt % (param_str, body)
-    return ast.id
 
 def fv(e):
     if isinstance(e, Abst):
@@ -113,18 +82,24 @@ def step(e):
         return Abst(e.id, body)
     raise RuntimeError('hi')
 
-def eval(a):
+def E(a):
     try:
-        return eval(step(a))
+        return E(step(a))
     except RuntimeError:
         return a
+def F(e):
+    if isinstance(e, Abst):
+        return r'(\%s. %s)' % (e.id, F(e.body))
+    if isinstance(e, Appl):
+        return r'(%s %s)' % (F(e.lhs), F(e.rhs))
+    return e.id
 
 if __name__ == '__main__':
-    expr = parse(r'((\ a. (\ b. (a (a (a b))))) (\ c. (\ d. (c (c d)))))')
-    print(format(eval(expr)))
-    expr = parse(r'(\f y. f y) (\x. y) q')
-    print(format(eval(expr)))
+    expr = parse(r'((\a. (\b. (a (a (a b))))) (\ c. (\ d. (c (c d)))))')
+    print(F(E(expr)))
+    expr = parse(r'(\f. \y. f y) (\x. y) q')
+    print(F(E(expr)))
     expr = parse(r'(\a. a) (\x. x) (\y. y)')
-    print(format(eval(expr)))
+    print(F(E(expr)))
     expr = parse(r'(\hi. hi)')
-    print(format(eval(expr)))
+    print(F(E(expr)))
