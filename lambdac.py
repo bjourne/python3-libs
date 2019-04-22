@@ -6,7 +6,7 @@ from collections import namedtuple
 from re import findall
 from string import ascii_lowercase
 
-LAMBDA, DOT, LPAREN, RPAREN, LCID, EOF = range(6)
+LAM, DOT, LPAREN, RPAREN, LCID, EOF = range(6)
 
 Token = namedtuple('Token', ['type', 'value'])
 Ident = namedtuple('Ident', ['id'])
@@ -27,7 +27,7 @@ def abst(toks):
     return abst
 
 def term(toks):
-    if toks[0].type == LAMBDA:
+    if toks[0].type == LAM:
         return abst(toks)
     return appl(toks)
 
@@ -40,7 +40,7 @@ def atom(toks):
         return trm
     elif peek_type == LCID:
         return Ident(toks.pop(0).value)
-    elif peek_type == LAMBDA:
+    elif peek_type == LAM:
         return abst(toks)
     return None
 
@@ -53,8 +53,8 @@ def appl(toks):
         lhs = Appl(lhs, rhs)
 
 def parse(s):
-    types = {'λ' : LAMBDA,
-             '\\' : LAMBDA,
+    types = {'λ' : LAM,
+             '\\' : LAM,
              '.' : DOT,
              '(' : LPAREN,
              ')' : RPAREN}
@@ -103,8 +103,7 @@ def rename(e, f, t):
         return Abst(e.id, rename(e.body, f, t))
     if isinstance(e, Appl):
         return Appl(rename(e.lhs, f, t), rename(e.rhs, f, t))
-    if isinstance(e, Ident):
-        return Ident(t if e.id == f else e.id)
+    return Ident(t if e.id == f else e.id)
 
 def newid(id, ast):
     if id in freevars(ast):
@@ -159,9 +158,8 @@ def eval(e, verbose = False):
     return e
 
 if __name__ == '__main__':
-
-    expr = parse(r'(\f. \y. f y) (\x. y) a')
-    print(format(step(expr)))
+    expr = parse(r'(\p. p (\t f. f) (\t f. t)) (\t f. t)')
+    print(format(eval(expr, verbose = True)))
     #eval(expr, verbose = True)
 
 
