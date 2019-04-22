@@ -81,7 +81,13 @@ def test_eval():
         (r'(\m n s z. m s (n s z)) (\s z. s z) (\s z. s (s z))',
          r'\s z. s (s (s z))'),
         (r'(((\x. (\y. y)) (\a. a)) (\b. b))',
-         r'\b. b')
+         r'\b. b'),
+
+        # alpha-renaming
+        (r'(\f. (\x. (f x))) (\y. (\x. y))',  r'\x y. x'),
+
+        # not true => false
+        (r'(\p. p (\t f. f) (\t f. t)) (\t f. t)', r'\t f. f')
         ]
     for inp, out in examples:
         expr = parse(inp)
