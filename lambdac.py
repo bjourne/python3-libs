@@ -144,12 +144,13 @@ def step(e):
     return None
 
 def eval(e, verbose = False):
+    if verbose:
+        print('   %s' % format(e))
     while True:
-        if verbose:
-            print(format(e))
         e2 = step(e)
         if not e2:
             break
+        print('-> %s' % format(e2))
         if e == e2:
             if verbose:
                 print('Infinite recursion detected!')
@@ -157,12 +158,20 @@ def eval(e, verbose = False):
         e = e2
     return e
 
+#
+# DW: (\n. \s. \z. s (n s z)) ((\n. \s. \z. s (n s z)) (\s. \z. z))
+# DW: (\s. \z. s ((\n. \s. \z. s (n s z)) (\s. \z. z) s z)
+# WORKS
+# (\s. \z. s ((\n. \s. \z. s (n s z)) (\s. \z. z) s z)) => (\s. \z. s (s z))
+
+
+
 if __name__ == '__main__':
-    expr = parse(r'(\p. p (\t f. f) (\t f. t)) (\t f. t)')
-    print(format(eval(expr, verbose = True)))
-    #eval(expr, verbose = True)
+    from argparse import ArgumentParser
+    parser = ArgumentParser(description = 'Lambda calculus interpreter')
+    parser.add_argument('--expr', '-e',
+                        type = str, required = True,
+                        help = 'Expression to evaluate.')
+    args = parser.parse_args()
 
-
-    # expr = parse(r'(\z. z) ((\s. \z. s z) s z)')
-    # print(format(step(expr)))
-    #eval(expr, verbose = True)
+    eval(parse(args.expr), verbose = True)
