@@ -3,6 +3,7 @@
 # Based on:
 # https://tadeuzagallo.com/blog/writing-a-lambda-calculus-interpreter-in-javascript/
 from collections import namedtuple
+from functools import reduce
 from re import findall
 from string import ascii_lowercase
 
@@ -150,7 +151,8 @@ def eval(e, verbose = False):
         e2 = step(e)
         if not e2:
             break
-        print('-> %s' % format(e2))
+        if verbose:
+            print('-> %s' % format(e2))
         if e == e2:
             if verbose:
                 print('Infinite recursion detected!')
@@ -158,13 +160,30 @@ def eval(e, verbose = False):
         e = e2
     return e
 
-#
-# DW: (\n. \s. \z. s (n s z)) ((\n. \s. \z. s (n s z)) (\s. \z. z))
-# DW: (\s. \z. s ((\n. \s. \z. s (n s z)) (\s. \z. z) s z)
-# WORKS
-# (\s. \z. s ((\n. \s. \z. s (n s z)) (\s. \z. z) s z)) => (\s. \z. s (s z))
+def multi_repl(str, repls):
+    return reduce(lambda a, kv: a.replace(kv[0], kv[1]), repls.items(), str)
 
+BUILTINS = {'$and' : r'(\b c. b c b)',
+            '$or' : r'(\b c. b b c)',
 
+            '$true' : r'(\t f. t)',
+            '$false' : r'(\t f. f)',
+
+            '$plus' : r'(\m n s z. m s (n s z))',
+            '$succ' : r'(\n s z. s (n s z))',
+            '$0' : r'(\s z. z)',
+            '$1' : r'(\s z. (s z))',
+            '$2' : r'(\s z. (s (s z)))',
+            '$3' : r'(\s z. (s (s (s z))))'}
+BUILTINS = {k : multi_repl(v, BUILTINS) for (k, v) in BUILTINS.items()}
+
+BUILTINS_BACK = {v : k for (k, v) in BUILTINS.items()}
+
+def parse_with_builtins(expr):
+    return parse(multi_repl(expr, BUILTINS))
+
+def format_with_builtins(expr):
+    return multi_repl(format(expr, brackets = True), BUILTINS_BACK)
 
 if __name__ == '__main__':
     from argparse import ArgumentParser

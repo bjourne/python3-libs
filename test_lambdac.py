@@ -100,8 +100,28 @@ def test_freevars():
     e = parse('a b')
     assert freevars(e) == {'a', 'b'}
 
+def parse_and_eval(expr):
+    expr = eval(parse_with_builtins(expr))
+    return format_with_builtins(expr)
+
+def test_predefined():
+    examples = [
+        ('$and $true $false', '$false'),
+        ('$or $true $false', '$true'),
+        ('$plus $1 $2', '$3'),
+        ('$succ $1', '$2'),
+        ('$plus $0 $1', '$1'),
+        ('$succ ($succ $0)', '$2')
+    ]
+    for inp, out in examples:
+        res = parse_and_eval(inp)
+        if res != out:
+            print('Got %s, expected %s.' % (res, out))
+        assert res == out
+
 if __name__ == '__main__':
     test_format()
     test_step()
     test_parsing()
     test_freevars()
+    test_predefined()
