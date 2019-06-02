@@ -3,7 +3,7 @@ from lambdac_golf import *
 
 def test_eval():
     examples = [
-        (r'(\f. \y. f y) (\x. y) q', 'y'),
+        (r'(\f. (\y. f y)) (\x. y) q', 'y'),
         (r'(\n. \s. \z. s (n s z)) (\s. \z. z)',
          r'(\s. (\z. (s z)))'),
         (r'(\n. \s. \z. s (n s z)) (\s. \z. s z)',
@@ -30,8 +30,8 @@ def test_eval():
         (r'((\ x. x) (\ y. (\ z. z)))', r'(\y. (\z. z))')
         ]
     for inp, out in examples:
-        expr = parse(inp)
-        format_out = F(E(expr))
+        #expr = P(inp)
+        format_out = E(P(inp))
         if out != format_out:
             print('%s => %s, expected %s' % (inp, format_out, out))
         assert format_out == out

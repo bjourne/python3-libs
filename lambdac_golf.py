@@ -24,5 +24,5 @@ def T(e):
 def F(e):o=y(e);return r'(\%s. %s)'%(e.i,F(e.b))if o==B else'(%s %s)'%(F(e.l),F(e.r)) if o==A else e
 def E(a):
     try: return E(T(a))
-    except NameError:print(F(a))
-E(P(input()))
+    except NameError:return F(a)
+#E(P(input()))
