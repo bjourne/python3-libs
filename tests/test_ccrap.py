@@ -1,5 +1,27 @@
 from ccrap.lexer import Lexer, LexerError
 from ccrap.parser import Parser
+from ccrap.typechecker import format, typecheck
+
+def test_typechecking():
+    examples = [
+        ('[ swap ]', '( a b -- b a )'),
+        ('[ swap swap ]', '( a b -- a b )'),
+        ('[ + ]', '( a b -- c )'),
+        ('[ 1 swap ]', '( a -- b a )'),
+        ('[ + - ]', '( a b c -- d )'),
+        ('[ [ ] ]', '( -- ( -- ) )'),
+
+        # Calling
+        ('[ [ ] call ]', '( -- )'),
+        ('[ [ 3 ] call ]', '( -- a )'),
+    ]
+    for inp, expected_out in examples:
+        parser = Parser(Lexer(inp))
+        quot = parser.parse_token(*parser.next_token())
+        out = format(typecheck(quot[1]))
+        if out != expected_out:
+            print(out)
+        assert out == expected_out
 
 def test_tokens():
     examples = [
@@ -72,7 +94,7 @@ def test_parser():
          [
              ('def',
               ('main',
-               (['argc', 'argv'], []),
+               (('argc', 'argv'), ()),
                [
                    ('sym', 'drop')
                ]))
@@ -82,7 +104,7 @@ def test_parser():
              ('def',
               (
                   'main',
-                  ([], []),
+                  ((), ()),
                   [
                   ]))
          ]),
@@ -91,7 +113,7 @@ def test_parser():
              ('def',
               (
                   'main',
-                  ([], []),
+                  ((), ()),
                   [
                       ('str', '"shit"')
                   ]))
@@ -100,7 +122,7 @@ def test_parser():
          [
              ('def',
               ('times',
-               (['a', 'b'], ['c']),
+               (('a', 'b'), ('c',)),
                [
                    ('quot',
                     [

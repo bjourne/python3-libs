@@ -76,8 +76,8 @@ class Parser:
 
     def parse_effect(self):
         self.match_token('(')
-        lhs = self.parse_until('--')
-        rhs = self.parse_until(')')
+        lhs = tuple(self.parse_until('--'))
+        rhs = tuple(self.parse_until(')'))
         return (lhs, rhs)
 
     def parse_token(self, type, val):
