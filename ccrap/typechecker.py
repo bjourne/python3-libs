@@ -6,6 +6,10 @@ from collections import defaultdict
 from string import ascii_lowercase
 from sys import exit
 
+class TypeCheckError(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+
 NEXT_NAME = -1
 def gensym():
     global NEXT_NAME
@@ -33,6 +37,7 @@ BUILTINS = {
     '2drop' : parse_effect('( a b -- )'),
     'drop' : parse_effect('( a -- )'),
     'dup' : parse_effect('( a -- a a )'),
+    'nip' : parse_effect('( a b -- b )'),
     'swap' : parse_effect('( a b -- b a )'),
     'tuck' : parse_effect('( x y -- y x y )')
 }
@@ -70,11 +75,22 @@ def rename(ins, outs):
 def apply_effect(inp, stack, eff):
     ins, outs = eff
     ensure(inp, stack, len(ins))
-    new_outs = [stack[ins.index(el)] if el in ins else gensym()
+    n_ins = len(ins)
+    new_outs = [stack[-(n_ins - ins.index(el))] if el in ins else gensym()
                 for el in outs]
     for _ in ins:
         stack.pop()
     stack.extend(new_outs)
+
+def height(eff):
+    return len(eff[1]) - len(eff[0])
+
+def combine(eff1, eff2):
+    if (type(eff1) == tuple and type(eff2) == tuple and
+        height(eff1) == height(eff2)):
+        return eff1 if len(eff1[0]) > len(eff2[0]) else eff2
+    else:
+        return gensym()
 
 def typecheck(seq):
     global NEXT_NAME
@@ -88,7 +104,23 @@ def typecheck(seq):
             stack.append(typecheck(val))
         elif val == 'call':
             eff = stack.pop()
+            if not type(eff) == tuple:
+                err = 'Cannot call value with unknown stack effect!'
+                raise TypeCheckError(err)
             apply_effect(inp, stack, eff)
+        elif val == 'dip':
+            eff = stack.pop()
+            ensure(inp, stack, 1)
+            saved = stack.pop()
+            apply_effect(inp, stack, eff)
+            stack.append(saved)
+        elif val == '?':
+            ensure(inp, stack, 3)
+            a = stack.pop()
+            b = stack.pop()
+            stack.pop()
+            c = combine(a, b)
+            stack.append(c)
         else:
             apply_effect(inp, stack, BUILTINS[val])
     return rename(inp, stack)
