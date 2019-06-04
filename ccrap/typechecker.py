@@ -70,23 +70,47 @@ def runseq(inp, stack, seq):
         elif tok == 'quot':
             stack.append(('quot', val))
         elif val == 'call':
-            if not stack:
-                err = 'Cannot infer call!'
-                raise TypeCheckError(err)
-            tok2, val2 = stack.pop()
-            if tok2 != 'quot':
-                err = 'Call needs literal quotation!'
-                raise TypeCheckError(err)
-            inp, stack = runseq(inp, stack, val2)
-        elif val == 'dip':
-            tok2, val2 = stack.pop()
-            if tok2 != 'quot':
-                err = 'Call needs literal quotation!'
-                raise TypeCheckError(err)
             ensure(inp, stack, 1)
+            tok2, val2 = stack.pop()
+            if tok2 == 'quot':
+                runseq(inp, stack, val2)
+            elif tok2 == 'either':
+                item1, item2 = val2
+
+                inp1 = list(inp)
+                stack1 = list(stack)
+                runseq(inp1, stack1, item1[1])
+
+                inp2 = list(inp)
+                stack2 = list(stack)
+                runseq(inp2, stack2, item2[1])
+
+                assert len(stack1) - len(inp1) == len(stack2) - len(inp2)
+
+                if len(inp1) > len(inp2):
+                    stack = stack1
+                    inp = inp1
+                else:
+                    stack = stack2
+                    inp = inp2
+            else:
+                err = 'Call needs literal quotation!'
+                raise TypeCheckError(err)
+        elif val == 'dip':
+            ensure(inp, stack, 1)
+            tok2, val2 = stack.pop()
+            if tok2 != 'quot':
+                err = 'Call needs literal quotation!'
+                raise TypeCheckError(err)
             saved = stack.pop()
-            inp, stack = runseq(inp, stack, val2)
+            runseq(inp, stack, val2)
             stack.append(saved)
+        elif val == '?':
+            ensure(inp, stack, 3)
+            item1 = stack.pop()
+            item2 = stack.pop()
+            stack.pop()
+            stack.append(('either', (item1, item2)))
         else:
             apply_effect(inp, stack, BUILTINS[val])
     return inp, stack
