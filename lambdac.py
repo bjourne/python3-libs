@@ -164,6 +164,7 @@ def multi_repl(str, repls):
     return reduce(lambda a, kv: a.replace(kv[0], kv[1]), repls.items(), str)
 
 BUILTINS = {'$and' : r'(\b c. b c b)',
+            '$not' : r'(\p. p $false $true)',
             '$or' : r'(\b c. b b c)',
 
             '$true' : r'(\t f. t)',

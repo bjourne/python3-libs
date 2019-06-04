@@ -96,7 +96,7 @@ class Parser:
                 self.end_of_file('`%s`' % stop_sym)
             type, val = tok
             if val == stop_sym:
-                return body
+                return tuple(body)
             body.append(self.parse_token(type, val))
 
     def parse_def(self):

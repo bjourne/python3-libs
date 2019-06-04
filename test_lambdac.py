@@ -111,7 +111,8 @@ def test_predefined():
         ('$plus $1 $2', '$3'),
         ('$succ $1', '$2'),
         ('$plus $0 $1', '$1'),
-        ('$succ ($succ $0)', '$2')
+        ('$succ ($succ $0)', '$2'),
+        ('$not $true', '$false')
     ]
     for inp, out in examples:
         res = parse_and_eval(inp)

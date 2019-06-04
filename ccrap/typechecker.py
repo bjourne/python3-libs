@@ -42,87 +42,73 @@ BUILTINS = {
     'tuck' : parse_effect('( x y -- y x y )')
 }
 
-
 def ensure(inp, stack, cnt):
     n = cnt - len(stack)
     if n <= 0:
         return
-    syms = [gensym() for _ in range(n)]
+    syms = [('dyn', gensym()) for _ in range(n)]
     while syms:
         sym = syms.pop()
         inp.insert(0, sym)
         stack.insert(0, sym)
 
-def rename(ins, outs):
-    global NEXT_NAME
-    NEXT_NAME = -1
-
-    slots = ins + outs
-    conv = {}
-    for n in slots:
-        if n not in conv:
-            tp = type(n)
-            if tp == int:
-                conv[n] = n
-            elif tp == tuple:
-                conv[n] = n
-            else:
-                conv[n] = gensym()
-    new_ins = tuple([conv[n] for n in ins])
-    new_outs = tuple([conv[n] for n in outs])
-    return new_ins, new_outs
-
 def apply_effect(inp, stack, eff):
     ins, outs = eff
     ensure(inp, stack, len(ins))
     n_ins = len(ins)
-    new_outs = [stack[-(n_ins - ins.index(el))] if el in ins else gensym()
+    new_outs = [stack[-(n_ins - ins.index(el))] if el in ins
+                else ('dyn', gensym())
                 for el in outs]
     for _ in ins:
         stack.pop()
     stack.extend(new_outs)
 
-def height(eff):
-    return len(eff[1]) - len(eff[0])
-
-def combine(eff1, eff2):
-    if (type(eff1) == tuple and type(eff2) == tuple and
-        height(eff1) == height(eff2)):
-        return eff1 if len(eff1[0]) > len(eff2[0]) else eff2
-    else:
-        return gensym()
-
-def typecheck(seq):
-    global NEXT_NAME
-    NEXT_NAME = -1
-    inp = []
-    stack = []
+def runseq(inp, stack, seq):
     for tok, val in seq:
         if tok == 'int':
-            stack.append(gensym())
+            stack.append(('int', val))
         elif tok == 'quot':
-            stack.append(typecheck(val))
+            stack.append(('quot', val))
         elif val == 'call':
-            eff = stack.pop()
-            if not type(eff) == tuple:
-                err = 'Cannot call value with unknown stack effect!'
+            if not stack:
+                err = 'Cannot infer call!'
                 raise TypeCheckError(err)
-            apply_effect(inp, stack, eff)
+            tok2, val2 = stack.pop()
+            if tok2 != 'quot':
+                err = 'Call needs literal quotation!'
+                raise TypeCheckError(err)
+            inp, stack = runseq(inp, stack, val2)
         elif val == 'dip':
-            eff = stack.pop()
+            tok2, val2 = stack.pop()
+            if tok2 != 'quot':
+                err = 'Call needs literal quotation!'
+                raise TypeCheckError(err)
             ensure(inp, stack, 1)
             saved = stack.pop()
-            apply_effect(inp, stack, eff)
+            inp, stack = runseq(inp, stack, val2)
             stack.append(saved)
-        elif val == '?':
-            ensure(inp, stack, 3)
-            a = stack.pop()
-            b = stack.pop()
-            stack.pop()
-            c = combine(a, b)
-            stack.append(c)
         else:
             apply_effect(inp, stack, BUILTINS[val])
+    return inp, stack
+
+def rename(ins, outs):
+    global NEXT_NAME
+    NEXT_NAME = -1
+    slots = ins + outs
+    conv = {}
+    for tokval in slots:
+        tok, val = tokval
+        if tokval not in conv:
+            if tok == 'int':
+                conv[tokval] = val
+            else:
+                conv[tokval] = gensym()
+    new_ins = tuple([conv[n] for n in ins])
+    new_outs = tuple([conv[n] for n in outs])
+    return new_ins, new_outs
+
+def typecheck(seq):
+    inp, stack = runseq([], [], seq)
     return rename(inp, stack)
 
 if __name__ == '__main__':

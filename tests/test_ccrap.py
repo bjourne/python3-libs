@@ -7,16 +7,17 @@ def test_typechecking():
         ('[ swap ]', '( a b -- b a )'),
         ('[ swap swap ]', '( a b -- a b )'),
         ('[ + ]', '( a b -- c )'),
-        ('[ 1 swap ]', '( a -- b a )'),
+        ('[ 1 swap ]', '( a -- 1 a )'),
         ('[ + - ]', '( a b c -- d )'),
-        ('[ [ ] ]', '( -- ( -- ) )'),
+        ('[ [ ] ]', '( -- a )'),
 
         ('[ nip ]', '( a b -- b )'),
-        ('[ dup [ ] dup ]', '( a -- a a ( -- ) ( -- ) )'),
+        ('[ dup [ ] dup ]', '( a -- a a b b )'),
 
         # Calling
         ('[ [ ] call ]', '( -- )'),
-        ('[ [ 3 ] call ]', '( -- a )'),
+        ('[ [ 3 ] call ]', '( -- 3 )'),
+        ('[ [ 1234 ] 44 [ call ] swap drop call ]', '( -- 1234 )')
     ]
     for inp, expected_out in examples:
         parser = Parser(Lexer(inp))
@@ -98,9 +99,9 @@ def test_parser():
              ('def',
               ('main',
                (('argc', 'argv'), ()),
-               [
-                   ('sym', 'drop')
-               ]))
+               (
+                   ('sym', 'drop'),
+               ),))
          ]),
         (': main ( -- ) ;',
          [
@@ -108,8 +109,8 @@ def test_parser():
               (
                   'main',
                   ((), ()),
-                  [
-                  ]))
+                  (
+                  )))
          ]),
         (': main ( -- ) "shit" ;',
          [
@@ -117,25 +118,26 @@ def test_parser():
               (
                   'main',
                   ((), ()),
-                  [
-                      ('str', '"shit"')
-                  ]))
+                  (
+                      ('str', '"shit"'),
+                  )))
          ]),
         (': times ( a b -- c ) [ [ [ oooh ] ] ] ;',
          [
              ('def',
               ('times',
                (('a', 'b'), ('c',)),
-               [
+               (
                    ('quot',
-                    [
+                    (
                         ('quot',
-                         [
+                         (
                              ('quot',
-                              [('sym', 'oooh')])]
-                        )]
-                   )]
-              ))])
+                              (('sym', 'oooh'),)
+                             ),)
+                        ),)
+                   ),)
+              )),])
     ]
     for text, expected_tree in examples:
         parser = Parser(Lexer(text))
@@ -156,4 +158,4 @@ def test_parse_body():
     text = '10 20 ;'
     parser = Parser(Lexer(text))
     body = parser.parse_body(';')
-    assert body == [('int', 10), ('int', 20)]
+    assert body == (('int', 10), ('int', 20))
