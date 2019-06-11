@@ -63,6 +63,29 @@ def apply_effect(inp, stack, eff):
         stack.pop()
     stack.extend(new_outs)
 
+def apply_call(inp, stack):
+    ensure(inp, stack, 1)
+    tok, val = stack.pop()
+    if tok == 'quot':
+        return runseq(inp, stack, val)
+    elif tok == 'either':
+        item1, item2 = val
+        inp1 = list(inp)
+        stack1 = list(stack)
+        runseq(inp1, stack1, item1[1])
+
+        inp2 = list(inp)
+        stack2 = list(stack)
+        runseq(inp2, stack2, item2[1])
+        assert len(stack1) - len(inp1) == len(stack2) - len(inp2)
+
+        if len(inp1) > len(inp2):
+            return inp1, stack1
+        else:
+            return inp2, stack2
+    err = 'Call needs literal quotation!'
+    raise TypeCheckError(err)
+
 def runseq(inp, stack, seq):
     for tok, val in seq:
         if tok == 'int':
@@ -70,32 +93,33 @@ def runseq(inp, stack, seq):
         elif tok == 'quot':
             stack.append(('quot', val))
         elif val == 'call':
-            ensure(inp, stack, 1)
-            tok2, val2 = stack.pop()
-            if tok2 == 'quot':
-                runseq(inp, stack, val2)
-            elif tok2 == 'either':
-                item1, item2 = val2
+            inp, stack = apply_call(inp, stack)
+            # ensure(inp, stack, 1)
+            # tok2, val2 = stack.pop()
+            # if tok2 == 'quot':
+            #     runseq(inp, stack, val2)
+            # elif tok2 == 'either':
+            #     item1, item2 = val2
 
-                inp1 = list(inp)
-                stack1 = list(stack)
-                runseq(inp1, stack1, item1[1])
+            #     inp1 = list(inp)
+            #     stack1 = list(stack)
+            #     runseq(inp1, stack1, item1[1])
 
-                inp2 = list(inp)
-                stack2 = list(stack)
-                runseq(inp2, stack2, item2[1])
+            #     inp2 = list(inp)
+            #     stack2 = list(stack)
+            #     runseq(inp2, stack2, item2[1])
 
-                assert len(stack1) - len(inp1) == len(stack2) - len(inp2)
+            #     assert len(stack1) - len(inp1) == len(stack2) - len(inp2)
 
-                if len(inp1) > len(inp2):
-                    stack = stack1
-                    inp = inp1
-                else:
-                    stack = stack2
-                    inp = inp2
-            else:
-                err = 'Call needs literal quotation!'
-                raise TypeCheckError(err)
+            #     if len(inp1) > len(inp2):
+            #         stack = stack1
+            #         inp = inp1
+            #     else:
+            #         stack = stack2
+            #         inp = inp2
+            # else:
+            #     err = 'Call needs literal quotation!'
+            #     raise TypeCheckError(err)
         elif val == 'dip':
             ensure(inp, stack, 2)
             tok2, val2 = stack.pop()
