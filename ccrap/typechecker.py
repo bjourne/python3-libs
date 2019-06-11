@@ -30,6 +30,31 @@ def parse_effect(str):
     parser = Parser(Lexer(str))
     return parser.parse_effect()
 
+def combine(inp1, stack1, inp2, stack2):
+    height1 = len(stack1) - len(inp1)
+    height2 = len(stack2) - len(inp2)
+
+    # Must have the same cumulative effect
+    assert height1 == height2
+
+    # Ensure stacks are aligned
+    out_len = max(len(stack1), len(stack2))
+    ensure(inp1, stack1, out_len)
+    ensure(inp2, stack2, out_len)
+
+    assert len(inp1) == len(inp2)
+    inp3 = inp1
+    stack3 = []
+    seen = {}
+    for el1, el2 in zip(stack1, stack2):
+        if el1 in inp1 and el2 in inp2 and inp1.index(el1) == inp2.index(el2):
+            stack3.append(el1)
+        else:
+            if not el1 in seen:
+                seen[el1] = 'dyn', gensym()
+            stack3.append(seen[el1])
+    return inp3, stack3
+
 BUILTINS = {
     '<' : parse_effect('( a b -- c )'),
     '+' : parse_effect('( a b -- c )'),
@@ -70,19 +95,10 @@ def apply_call(inp, stack):
         return runseq(inp, stack, val)
     elif tok == 'either':
         item1, item2 = val
-        inp1 = list(inp)
-        stack1 = list(stack)
-        runseq(inp1, stack1, item1[1])
-
-        inp2 = list(inp)
-        stack2 = list(stack)
-        runseq(inp2, stack2, item2[1])
+        inp1, stack1 = runseq(list(inp), list(stack), item1[1])
+        inp2, stack2 = runseq(list(inp), list(stack), item2[1])
         assert len(stack1) - len(inp1) == len(stack2) - len(inp2)
-
-        if len(inp1) > len(inp2):
-            return inp1, stack1
-        else:
-            return inp2, stack2
+        return combine(inp1, stack1, inp2, stack2)
     err = 'Call needs literal quotation!'
     raise TypeCheckError(err)
 
@@ -94,32 +110,6 @@ def runseq(inp, stack, seq):
             stack.append(('quot', val))
         elif val == 'call':
             inp, stack = apply_call(inp, stack)
-            # ensure(inp, stack, 1)
-            # tok2, val2 = stack.pop()
-            # if tok2 == 'quot':
-            #     runseq(inp, stack, val2)
-            # elif tok2 == 'either':
-            #     item1, item2 = val2
-
-            #     inp1 = list(inp)
-            #     stack1 = list(stack)
-            #     runseq(inp1, stack1, item1[1])
-
-            #     inp2 = list(inp)
-            #     stack2 = list(stack)
-            #     runseq(inp2, stack2, item2[1])
-
-            #     assert len(stack1) - len(inp1) == len(stack2) - len(inp2)
-
-            #     if len(inp1) > len(inp2):
-            #         stack = stack1
-            #         inp = inp1
-            #     else:
-            #         stack = stack2
-            #         inp = inp2
-            # else:
-            #     err = 'Call needs literal quotation!'
-            #     raise TypeCheckError(err)
         elif val == 'dip':
             ensure(inp, stack, 2)
             tok2, val2 = stack.pop()

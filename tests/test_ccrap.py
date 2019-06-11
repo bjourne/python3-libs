@@ -1,6 +1,15 @@
 from ccrap.lexer import Lexer, LexerError
 from ccrap.parser import Parser
-from ccrap.typechecker import format, typecheck
+from ccrap.typechecker import combine, format, typecheck
+
+def test_combine():
+    # Corresponds to dup
+    inp1, stack1 = [('dyn', 'a')], [('dyn', 'a'), ('dyn', 'a')]
+    # Corresponds to literal
+    inp2, stack2 = [], [('int', 50)]
+    inp3, stack3 = combine(inp1, stack1, inp2, stack2)
+    assert inp3 == [('dyn', 'a')]
+    assert stack3 == [('dyn', 'a'), ('dyn', 'b')]
 
 def test_typechecking():
     examples = [
@@ -25,7 +34,12 @@ def test_typechecking():
         ('[ [ [ [ ] dip ] dip ] dip ]', '( a b c -- a b c )'),
 
         # Either types
-        ('[ [ ] [ ] ? call ]', '( a -- )')
+        ('[ [ ] [ ] ? call ]', '( a -- )'),
+        ('[ [ dup ] [ dup ] ? call ]', '( a b -- a a )'),
+        ('[ [ dup ] [ 77 ] ? call ]', '( a b -- a c )'),
+        ('[ [ 99 ] [ 77 ] ? call ]', '( a -- b )'),
+        ('[ 7 [ dup ] [ dup ] ? call ]', '( a -- a a )'),
+        ('[ 7 [ 7 7 ] [ 8 dup ] ? call ]', '( -- a a )')
     ]
     for inp, expected_out in examples:
         parser = Parser(Lexer(inp))
