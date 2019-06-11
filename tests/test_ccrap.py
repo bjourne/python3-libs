@@ -32,6 +32,7 @@ def test_typechecking():
         ('[ [ 10 swap ] 4 [ call ] dip ]', '( a -- 10 a 4 )'),
         ('[ [ ] dip ]', '( a -- a )'),
         ('[ [ [ [ ] dip ] dip ] dip ]', '( a b c -- a b c )'),
+        ('[ [ 3 ] [ 4 ] swap call [ call ] dip ]', '( -- 4 3 )'),
 
         # Either types
         ('[ [ ] [ ] ? call ]', '( a -- )'),
@@ -39,7 +40,16 @@ def test_typechecking():
         ('[ [ dup ] [ 77 ] ? call ]', '( a b -- a c )'),
         ('[ [ 99 ] [ 77 ] ? call ]', '( a -- b )'),
         ('[ 7 [ dup ] [ dup ] ? call ]', '( a -- a a )'),
-        ('[ 7 [ 7 7 ] [ 8 dup ] ? call ]', '( -- a a )')
+        ('[ 7 [ 7 7 ] [ 8 dup ] ? call ]', '( -- a a )'),
+
+        ('[ [ 4 ] [ 4 ] ? call ]', '( a -- 4 )'),
+        ('[ 0 0 [ 4 ] [ 4 ] ? [ 4 ] ? call ]', '( -- 4 )'),
+
+        # Nested either types
+        ('[ 0 0 [ ] [ ] ? [ ] ? call ]', '( -- )'),
+
+        # Dip with either types
+        ('[ [ ] [ ] ? dip ]', '( a b -- a )')
     ]
     for inp, expected_out in examples:
         parser = Parser(Lexer(inp))

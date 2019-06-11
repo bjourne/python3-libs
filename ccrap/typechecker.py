@@ -31,23 +31,24 @@ def parse_effect(str):
     return parser.parse_effect()
 
 def combine(inp1, stack1, inp2, stack2):
-    height1 = len(stack1) - len(inp1)
-    height2 = len(stack2) - len(inp2)
-
-    # Must have the same cumulative effect
-    assert height1 == height2
+    err = 'Cannot combine incompatible effects, %s and %s.'
+    if len(stack1) - len(inp1) != len(stack2) - len(inp2):
+        eff1_str = format(rename(inp1, stack1))
+        eff2_str = format(rename(inp2, stack2))
+        raise TypeCheckError(err % (eff1_str, eff2_str))
 
     # Ensure stacks are aligned
     out_len = max(len(stack1), len(stack2))
     ensure(inp1, stack1, out_len)
     ensure(inp2, stack2, out_len)
-
     assert len(inp1) == len(inp2)
     inp3 = inp1
     stack3 = []
     seen = {}
     for el1, el2 in zip(stack1, stack2):
         if el1 in inp1 and el2 in inp2 and inp1.index(el1) == inp2.index(el2):
+            stack3.append(el1)
+        elif el1 == el2:
             stack3.append(el1)
         else:
             if not el1 in seen:
@@ -88,21 +89,32 @@ def apply_effect(inp, stack, eff):
         stack.pop()
     stack.extend(new_outs)
 
-def apply_call(inp, stack):
-    ensure(inp, stack, 1)
-    tok, val = stack.pop()
+def apply_item(inp, stack, item):
+    tok, val = item
     if tok == 'quot':
-        return runseq(inp, stack, val)
+        return apply_quot(inp, stack, val)
     elif tok == 'either':
         item1, item2 = val
-        inp1, stack1 = runseq(list(inp), list(stack), item1[1])
-        inp2, stack2 = runseq(list(inp), list(stack), item2[1])
-        assert len(stack1) - len(inp1) == len(stack2) - len(inp2)
+        inp1, stack1 = apply_item(list(inp), list(stack), item1)
+        inp2, stack2 = apply_item(list(inp), list(stack), item2)
         return combine(inp1, stack1, inp2, stack2)
-    err = 'Call needs literal quotation!'
+    err = 'Call and dip needs literal quotation!'
     raise TypeCheckError(err)
 
-def runseq(inp, stack, seq):
+def apply_call(inp, stack):
+    ensure(inp, stack, 1)
+    item = stack.pop()
+    return apply_item(inp, stack, item)
+
+def apply_dip(inp, stack):
+    ensure(inp, stack, 2)
+    item = stack.pop()
+    saved = stack.pop()
+    inp, stack = apply_item(inp, stack, item)
+    stack.append(saved)
+    return inp, stack
+
+def apply_quot(inp, stack, seq):
     for tok, val in seq:
         if tok == 'int':
             stack.append(('int', val))
@@ -111,14 +123,7 @@ def runseq(inp, stack, seq):
         elif val == 'call':
             inp, stack = apply_call(inp, stack)
         elif val == 'dip':
-            ensure(inp, stack, 2)
-            tok2, val2 = stack.pop()
-            if tok2 != 'quot':
-                err = 'Call needs literal quotation!'
-                raise TypeCheckError(err)
-            saved = stack.pop()
-            runseq(inp, stack, val2)
-            stack.append(saved)
+            inp, stack = apply_dip(inp, stack)
         elif val == '?':
             ensure(inp, stack, 3)
             item1 = stack.pop()
@@ -146,7 +151,7 @@ def rename(ins, outs):
     return new_ins, new_outs
 
 def typecheck(seq):
-    inp, stack = runseq([], [], seq)
+    inp, stack = apply_quot([], [], seq)
     return rename(inp, stack)
 
 if __name__ == '__main__':
