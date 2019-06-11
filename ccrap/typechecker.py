@@ -97,7 +97,7 @@ def runseq(inp, stack, seq):
                 err = 'Call needs literal quotation!'
                 raise TypeCheckError(err)
         elif val == 'dip':
-            ensure(inp, stack, 1)
+            ensure(inp, stack, 2)
             tok2, val2 = stack.pop()
             if tok2 != 'quot':
                 err = 'Call needs literal quotation!'

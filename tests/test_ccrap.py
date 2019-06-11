@@ -20,7 +20,8 @@ def test_typechecking():
         ('[ [ 1234 ] 44 [ call ] swap drop call ]', '( -- 1234 )'),
 
         # Dipping
-        ('[ [ 10 swap ] 4 [ call ] dip ]', '( a -- 10 a 4 )')
+        ('[ [ 10 swap ] 4 [ call ] dip ]', '( a -- 10 a 4 )'),
+        ('[ [ ] dip ]', '( a -- a )')
     ]
     for inp, expected_out in examples:
         parser = Parser(Lexer(inp))
