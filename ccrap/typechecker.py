@@ -2,9 +2,29 @@
 from argparse import ArgumentParser
 from ccrap.lexer import Lexer
 from ccrap.parser import Parser
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from string import ascii_lowercase
 from sys import exit
+
+########################################################################
+# Keeping track of the stack state
+########################################################################
+StackState = namedtuple('StackState', ['input', 'stack'])
+
+def clone(state):
+    return StackState(list(state.input), list(state.stack))
+
+def height(state):
+    return len(state.stack) - len(state.input)
+
+def compatible_items(state1, el1, state2, el2):
+    if ((el1 in state1.input and el2 in state2.input and
+         state1.input.index(el1) == state2.input.index(el2)) or
+        el1 == el2):
+        return True
+    return False
+
+########################################################################
 
 class TypeCheckError(Exception):
     def __init__(self, message):
@@ -30,114 +50,114 @@ def parse_effect(str):
     parser = Parser(Lexer(str))
     return parser.parse_effect()
 
-def combine(inp1, stack1, inp2, stack2):
+def combine(state1, state2):
     err = 'Cannot combine incompatible effects, %s and %s.'
-    if len(stack1) - len(inp1) != len(stack2) - len(inp2):
-        eff1_str = format(rename(inp1, stack1))
-        eff2_str = format(rename(inp2, stack2))
+    if height(state1) != height(state2):
+        eff1_str = format(rename(state1))
+        eff2_str = format(rename(state2))
         raise TypeCheckError(err % (eff1_str, eff2_str))
 
     # Ensure stacks are aligned
-    out_len = max(len(stack1), len(stack2))
-    ensure(inp1, stack1, out_len)
-    ensure(inp2, stack2, out_len)
-    assert len(inp1) == len(inp2)
-    inp3 = inp1
-    stack3 = []
+    out_len = max(len(state1.stack), len(state2.stack))
+    ensure(state1, out_len)
+    ensure(state2, out_len)
+    assert len(state1.input) == len(state2.input)
+
+    state3 = StackState(state1.input, [])
     seen = {}
-    for el1, el2 in zip(stack1, stack2):
-        if el1 in inp1 and el2 in inp2 and inp1.index(el1) == inp2.index(el2):
-            stack3.append(el1)
-        elif el1 == el2:
-            stack3.append(el1)
+    for el1, el2 in zip(state1.stack, state2.stack):
+        if compatible_items(state1, el1, state2, el2):
+            state3.stack.append(el1)
         else:
             if not el1 in seen:
                 seen[el1] = 'dyn', gensym()
-            stack3.append(seen[el1])
-    return inp3, stack3
+            state3.stack.append(seen[el1])
+    return state3
 
 BUILTINS = {
     '<' : parse_effect('( a b -- c )'),
     '+' : parse_effect('( a b -- c )'),
     '-' : parse_effect('( a b -- c )'),
     '2drop' : parse_effect('( a b -- )'),
+    '2dup' : parse_effect('( a b -- a b a b )'),
     'drop' : parse_effect('( a -- )'),
     'dup' : parse_effect('( a -- a a )'),
     'nip' : parse_effect('( a b -- b )'),
+    'over' : parse_effect('( a b -- a b a )'),
     'swap' : parse_effect('( a b -- b a )'),
     'tuck' : parse_effect('( x y -- y x y )')
 }
 
-def ensure(inp, stack, cnt):
-    n = cnt - len(stack)
-    if n <= 0:
-        return
-    syms = [('dyn', gensym()) for _ in range(n)]
-    while syms:
-        sym = syms.pop()
-        inp.insert(0, sym)
-        stack.insert(0, sym)
+def ensure(state, cnt):
+    for _ in range(cnt - len(state.stack)):
+        sym = 'dyn', gensym()
+        state.input.insert(0, sym)
+        state.stack.insert(0, sym)
 
-def apply_effect(inp, stack, eff):
+def apply_effect(state, eff):
     ins, outs = eff
-    ensure(inp, stack, len(ins))
+    ensure(state, len(ins))
     n_ins = len(ins)
-    new_outs = [stack[-(n_ins - ins.index(el))] if el in ins
+    new_outs = [state.stack[-(n_ins - ins.index(el))] if el in ins
                 else ('dyn', gensym())
                 for el in outs]
     for _ in ins:
-        stack.pop()
-    stack.extend(new_outs)
+        state.stack.pop()
+    state.stack.extend(new_outs)
 
-def apply_item(inp, stack, item):
+def apply_item(state, item):
     tok, val = item
     if tok == 'quot':
-        return apply_quot(inp, stack, val)
+        return apply_quot(state, val)
     elif tok == 'either':
         item1, item2 = val
-        inp1, stack1 = apply_item(list(inp), list(stack), item1)
-        inp2, stack2 = apply_item(list(inp), list(stack), item2)
-        return combine(inp1, stack1, inp2, stack2)
-    err = 'Call and dip needs literal quotation!'
+        state1 = apply_item(clone(state), item1)
+        state2 = apply_item(clone(state), item2)
+        return combine(state1, state2)
+    err = 'Call and dip needs literal quotations!'
     raise TypeCheckError(err)
 
-def apply_call(inp, stack):
-    ensure(inp, stack, 1)
-    item = stack.pop()
-    return apply_item(inp, stack, item)
+def apply_call(state):
+    ensure(state, 1)
+    item = state.stack.pop()
+    return apply_item(state, item)
 
-def apply_dip(inp, stack):
-    ensure(inp, stack, 2)
-    item = stack.pop()
-    saved = stack.pop()
-    inp, stack = apply_item(inp, stack, item)
-    stack.append(saved)
-    return inp, stack
+def apply_dip(state):
+    ensure(state, 2)
+    item = state.stack.pop()
+    saved = state.stack.pop()
+    state = apply_item(state, item)
+    state.stack.append(saved)
+    return state
 
-def apply_quot(inp, stack, seq):
+def apply_qm(state):
+    ensure(state, 3)
+    item1 = state.stack.pop()
+    item2 = state.stack.pop()
+    state.stack.pop()
+    state.stack.append(('either', (item1, item2)))
+
+def apply_quot(state, seq):
     for tok, val in seq:
         if tok == 'int':
-            stack.append(('int', val))
+            state.stack.append(('int', val))
         elif tok == 'quot':
-            stack.append(('quot', val))
+            state.stack.append(('quot', val))
         elif val == 'call':
-            inp, stack = apply_call(inp, stack)
+            state = apply_call(state)
         elif val == 'dip':
-            inp, stack = apply_dip(inp, stack)
+            state = apply_dip(state)
         elif val == '?':
-            ensure(inp, stack, 3)
-            item1 = stack.pop()
-            item2 = stack.pop()
-            stack.pop()
-            stack.append(('either', (item1, item2)))
+            apply_qm(state)
         else:
-            apply_effect(inp, stack, BUILTINS[val])
-    return inp, stack
+            apply_effect(state, BUILTINS[val])
+    return state
 
-def rename(ins, outs):
+def rename(state):
     global NEXT_NAME
     NEXT_NAME = -1
-    slots = ins + outs
+
+    slots = state.input + state.stack
     conv = {}
     for tokval in slots:
         tok, val = tokval
@@ -146,13 +166,15 @@ def rename(ins, outs):
                 conv[tokval] = val
             else:
                 conv[tokval] = gensym()
-    new_ins = tuple([conv[n] for n in ins])
-    new_outs = tuple([conv[n] for n in outs])
+    new_ins = tuple([conv[n] for n in state.input])
+    new_outs = tuple([conv[n] for n in state.stack])
     return new_ins, new_outs
 
-def typecheck(seq):
-    inp, stack = apply_quot([], [], seq)
-    return rename(inp, stack)
+def infer(seq):
+    state = StackState([], [])
+    state = apply_quot(state, seq)
+    print(state)
+    return rename(state)
 
 if __name__ == '__main__':
     parser = ArgumentParser(description = 'CCrap type-checker')
@@ -163,4 +185,4 @@ if __name__ == '__main__':
     parser = Parser(Lexer(args.quot))
     tp, val = parser.next_token()
     quot = parser.parse_token(tp, val)
-    print(format(typecheck(quot[1])))
+    print(format(infer(quot[1])))

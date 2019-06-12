@@ -21,8 +21,7 @@ C: puts int puts ( const char* ) 0
 
 : fib ( n -- n' )
     dup 2 < [ ] [
-        dup 1 - fib
-        swap 2 - fib +
+        [ 1 - fib ] [ 2 - fib ] bi +
     ] if ;
 
 : fib-iter ( n -- n' )
