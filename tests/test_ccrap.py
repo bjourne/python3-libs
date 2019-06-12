@@ -7,8 +7,8 @@ def test_combine():
     state1 = StackState([('dyn', 'a')], [('dyn', 'a'), ('dyn', 'a')])
     state2 = StackState([], [('int', 50)])
     state3 = combine(state1, state2)
-    assert state3.input == [('dyn', 'a')]
-    assert state3.stack == [('dyn', 'a'), ('dyn', 'b')]
+    assert state3.ins == [('dyn', 'a')]
+    assert state3.outs == [('dyn', 'a'), ('dyn', 'b')]
 
 def test_typechecking():
     examples = [

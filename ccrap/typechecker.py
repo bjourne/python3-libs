@@ -9,17 +9,17 @@ from sys import exit
 ########################################################################
 # Keeping track of the stack state
 ########################################################################
-StackState = namedtuple('StackState', ['input', 'stack'])
+StackState = namedtuple('StackState', ['ins', 'outs'])
 
 def clone(state):
-    return StackState(list(state.input), list(state.stack))
+    return StackState(list(state.ins), list(state.outs))
 
 def height(state):
-    return len(state.stack) - len(state.input)
+    return len(state.outs) - len(state.ins)
 
 def compatible_items(state1, el1, state2, el2):
-    if ((el1 in state1.input and el2 in state2.input and
-         state1.input.index(el1) == state2.input.index(el2)) or
+    if ((el1 in state1.ins and el2 in state2.ins and
+         state1.ins.index(el1) == state2.ins.index(el2)) or
         el1 == el2):
         return True
     return False
@@ -58,20 +58,20 @@ def combine(state1, state2):
         raise TypeCheckError(err % (eff1_str, eff2_str))
 
     # Ensure stacks are aligned
-    out_len = max(len(state1.stack), len(state2.stack))
+    out_len = max(len(state1.outs), len(state2.outs))
     ensure(state1, out_len)
     ensure(state2, out_len)
-    assert len(state1.input) == len(state2.input)
+    assert len(state1.ins) == len(state2.ins)
 
-    state3 = StackState(state1.input, [])
+    state3 = StackState(state1.ins, [])
     seen = {}
-    for el1, el2 in zip(state1.stack, state2.stack):
+    for el1, el2 in zip(state1.outs, state2.outs):
         if compatible_items(state1, el1, state2, el2):
-            state3.stack.append(el1)
+            state3.outs.append(el1)
         else:
             if not el1 in seen:
                 seen[el1] = 'dyn', gensym()
-            state3.stack.append(seen[el1])
+            state3.outs.append(seen[el1])
     return state3
 
 BUILTINS = {
@@ -89,21 +89,21 @@ BUILTINS = {
 }
 
 def ensure(state, cnt):
-    for _ in range(cnt - len(state.stack)):
+    for _ in range(cnt - len(state.outs)):
         sym = 'dyn', gensym()
-        state.input.insert(0, sym)
-        state.stack.insert(0, sym)
+        state.ins.insert(0, sym)
+        state.outs.insert(0, sym)
 
 def apply_effect(state, eff):
     ins, outs = eff
     ensure(state, len(ins))
     n_ins = len(ins)
-    new_outs = [state.stack[-(n_ins - ins.index(el))] if el in ins
+    new_outs = [state.outs[-(n_ins - ins.index(el))] if el in ins
                 else ('dyn', gensym())
                 for el in outs]
     for _ in ins:
-        state.stack.pop()
-    state.stack.extend(new_outs)
+        state.outs.pop()
+    state.outs.extend(new_outs)
 
 def apply_item(state, item):
     tok, val = item
@@ -119,30 +119,30 @@ def apply_item(state, item):
 
 def apply_call(state):
     ensure(state, 1)
-    item = state.stack.pop()
+    item = state.outs.pop()
     return apply_item(state, item)
 
 def apply_dip(state):
     ensure(state, 2)
-    item = state.stack.pop()
-    saved = state.stack.pop()
+    item = state.outs.pop()
+    saved = state.outs.pop()
     state = apply_item(state, item)
-    state.stack.append(saved)
+    state.outs.append(saved)
     return state
 
 def apply_qm(state):
     ensure(state, 3)
-    item1 = state.stack.pop()
-    item2 = state.stack.pop()
-    state.stack.pop()
-    state.stack.append(('either', (item1, item2)))
+    item1 = state.outs.pop()
+    item2 = state.outs.pop()
+    state.outs.pop()
+    state.outs.append(('either', (item1, item2)))
 
 def apply_quot(state, seq):
     for tok, val in seq:
         if tok == 'int':
-            state.stack.append(('int', val))
+            state.outs.append(('int', val))
         elif tok == 'quot':
-            state.stack.append(('quot', val))
+            state.outs.append(('quot', val))
         elif val == 'call':
             state = apply_call(state)
         elif val == 'dip':
@@ -156,18 +156,16 @@ def apply_quot(state, seq):
 def rename(state):
     global NEXT_NAME
     NEXT_NAME = -1
-
-    slots = state.input + state.stack
     conv = {}
-    for tokval in slots:
+    for tokval in state.ins + state.outs:
         tok, val = tokval
         if tokval not in conv:
             if tok == 'int':
                 conv[tokval] = val
             else:
                 conv[tokval] = gensym()
-    new_ins = tuple([conv[n] for n in state.input])
-    new_outs = tuple([conv[n] for n in state.stack])
+    new_ins = tuple([conv[n] for n in state.ins])
+    new_outs = tuple([conv[n] for n in state.outs])
     return new_ins, new_outs
 
 def infer(seq):
