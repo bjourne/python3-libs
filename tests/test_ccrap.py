@@ -17,10 +17,12 @@ def test_typechecking():
         ('[ + ]', '( a b -- c )'),
         ('[ 1 swap ]', '( a -- 1 a )'),
         ('[ + - ]', '( a b c -- d )'),
-        ('[ [ ] ]', '( -- a )'),
-
         ('[ nip ]', '( a b -- b )'),
-        ('[ dup [ ] dup ]', '( a -- a a b b )'),
+
+        # Typechecking nested effects
+        ('[ dup [ ] dup ]', '( a -- a a ( -- ) ( -- ) )'),
+        ('[ [ ] ]', '( -- ( -- ) )'),
+        ('[ [ [ [ ] ] ] ]', '( -- ( -- ( -- ( -- ) ) ) )'),
 
         # Calling
         ('[ [ ] call ]', '( -- )'),
@@ -53,7 +55,7 @@ def test_typechecking():
     for inp, expected_out in examples:
         parser = Parser(Lexer(inp))
         quot = parser.parse_token(*parser.next_token())
-        out = format(infer(quot[1]))
+        out = format(infer(quot))
         if out != expected_out:
             print(out)
         assert out == expected_out

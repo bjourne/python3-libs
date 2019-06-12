@@ -7,6 +7,15 @@ from string import ascii_lowercase
 from sys import exit
 
 ########################################################################
+# Name generation
+########################################################################
+NEXT_NAME = -1
+def gensym():
+    global NEXT_NAME
+    NEXT_NAME = (NEXT_NAME + 1) % len(ascii_lowercase)
+    return ascii_lowercase[NEXT_NAME]
+
+########################################################################
 # Keeping track of the stack state
 ########################################################################
 StackState = namedtuple('StackState', ['ins', 'outs'])
@@ -24,17 +33,30 @@ def compatible_items(state1, el1, state2, el2):
         return True
     return False
 
+def rename_rec(state, conv):
+    for tokval in state.ins + state.outs:
+        tok, val = tokval
+        if tokval not in conv:
+            if tok == 'int':
+                conv[tokval] = val
+            elif type(tokval) == StackState:
+                conv[tokval] = rename_rec(tokval, conv)
+            else:
+                conv[tokval] = gensym()
+    new_ins = tuple([conv[n] for n in state.ins])
+    new_outs = tuple([conv[n] for n in state.outs])
+    return new_ins, new_outs
+
+def rename(state):
+    global NEXT_NAME
+    NEXT_NAME = -1
+    return rename_rec(state, {})
+
 ########################################################################
 
 class TypeCheckError(Exception):
     def __init__(self, message):
         super().__init__(message)
-
-NEXT_NAME = -1
-def gensym():
-    global NEXT_NAME
-    NEXT_NAME = (NEXT_NAME + 1) % len(ascii_lowercase)
-    return ascii_lowercase[NEXT_NAME]
 
 def format_side(side):
     seq = [str(e) if not type(e) == tuple else format(e)
@@ -77,6 +99,7 @@ def combine(state1, state2):
 BUILTINS = {
     '<' : parse_effect('( a b -- c )'),
     '+' : parse_effect('( a b -- c )'),
+    '*' : parse_effect('( a b -- c )'),
     '-' : parse_effect('( a b -- c )'),
     '2drop' : parse_effect('( a b -- )'),
     '2dup' : parse_effect('( a b -- a b a b )'),
@@ -106,11 +129,10 @@ def apply_effect(state, eff):
     state.outs.extend(new_outs)
 
 def apply_item(state, item):
-    tok, val = item
-    if tok == 'quot':
-        return apply_quot(state, val)
-    elif tok == 'either':
-        item1, item2 = val
+    if item[0] == 'quot':
+        return apply_quot(state, item)
+    elif item[0] == 'either':
+        item1, item2 = item[1]
         state1 = apply_item(clone(state), item1)
         state2 = apply_item(clone(state), item2)
         return combine(state1, state2)
@@ -137,8 +159,8 @@ def apply_qm(state):
     state.outs.pop()
     state.outs.append(('either', (item1, item2)))
 
-def apply_quot(state, seq):
-    for tok, val in seq:
+def apply_quot(state, quot):
+    for tok, val in quot[1]:
         if tok == 'int':
             state.outs.append(('int', val))
         elif tok == 'quot':
@@ -153,28 +175,20 @@ def apply_quot(state, seq):
             apply_effect(state, BUILTINS[val])
     return state
 
-def rename(state):
-    global NEXT_NAME
-    NEXT_NAME = -1
-    conv = {}
-    for tokval in state.ins + state.outs:
-        tok, val = tokval
-        if tokval not in conv:
-            if tok == 'int':
-                conv[tokval] = val
-            else:
-                conv[tokval] = gensym()
-    new_ins = tuple([conv[n] for n in state.ins])
-    new_outs = tuple([conv[n] for n in state.outs])
-    return new_ins, new_outs
-
-def infer(seq):
+def infer_quot(quot):
     state = StackState([], [])
-    state = apply_quot(state, seq)
-    print(state)
+    state = apply_quot(state, quot)
+    outs = [infer_quot(it) if it[0] == 'quot' else it
+            for it in state.outs]
+    return StackState(tuple(state.ins), tuple(outs))
+
+def infer(quot):
+    state = infer_quot(quot)
     return rename(state)
 
 if __name__ == '__main__':
+    print(parse_effect('( -- ( a -- b ) )'))
+
     parser = ArgumentParser(description = 'CCrap type-checker')
     parser.add_argument('--quot', '-q',
                         type = str, required = True,
@@ -183,4 +197,6 @@ if __name__ == '__main__':
     parser = Parser(Lexer(args.quot))
     tp, val = parser.next_token()
     quot = parser.parse_token(tp, val)
-    print(format(infer(quot[1])))
+
+    state = infer(quot)
+    print(format(state))
