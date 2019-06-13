@@ -33,24 +33,25 @@ def compatible_items(state1, el1, state2, el2):
         return True
     return False
 
-def rename_rec(state, conv):
-    for tokval in state.ins + state.outs:
+def rename_rec(eff, conv):
+    ins, outs = eff
+    for tokval in ins + outs:
         tok, val = tokval
         if tokval not in conv:
             if tok == 'int':
                 conv[tokval] = val
-            elif type(tokval) == StackState:
-                conv[tokval] = rename_rec(tokval, conv)
+            elif tok == 'effect':
+                conv[tokval] = rename_rec(val, conv)
             else:
                 conv[tokval] = gensym()
-    new_ins = tuple([conv[n] for n in state.ins])
-    new_outs = tuple([conv[n] for n in state.outs])
+    new_ins = tuple([conv[n] for n in ins])
+    new_outs = tuple([conv[n] for n in outs])
     return new_ins, new_outs
 
-def rename(state):
+def rename(eff):
     global NEXT_NAME
     NEXT_NAME = -1
-    return rename_rec(state, {})
+    return rename_rec(eff, {})
 
 ########################################################################
 
@@ -101,6 +102,7 @@ BUILTINS = {
     '+' : parse_effect('( a b -- c )'),
     '*' : parse_effect('( a b -- c )'),
     '-' : parse_effect('( a b -- c )'),
+    '=' : parse_effect('( a b -- c )'),
     '2drop' : parse_effect('( a b -- )'),
     '2dup' : parse_effect('( a b -- a b a b )'),
     'drop' : parse_effect('( a -- )'),
@@ -108,7 +110,11 @@ BUILTINS = {
     'nip' : parse_effect('( a b -- b )'),
     'over' : parse_effect('( a b -- a b a )'),
     'swap' : parse_effect('( a b -- b a )'),
-    'tuck' : parse_effect('( x y -- y x y )')
+    'tuck' : parse_effect('( x y -- y x y )'),
+
+    'foo' : parse_effect('( -- ( -- ) )'),
+    'foo1' : parse_effect('( -- ( -- a ) )'),
+    'foo-int' : parse_effect('( -- ( -- 10 20 ) )')
 }
 
 def ensure(state, cnt):
@@ -121,12 +127,24 @@ def apply_effect(state, eff):
     ins, outs = eff
     ensure(state, len(ins))
     n_ins = len(ins)
-    new_outs = [state.outs[-(n_ins - ins.index(el))] if el in ins
-                else ('dyn', gensym())
-                for el in outs]
+
+    new_outs = []
+    seen = {}
+    for tokval in outs:
+        tok, val = tokval
+        if tokval in ins:
+            item = state.outs[-(n_ins - ins.index(tokval))]
+        elif tok in ('int', 'effect'):
+            item = tokval
+        else:
+            if tokval not in seen:
+                seen[tokval] = 'dyn', gensym()
+            item = seen[tokval]
+        new_outs.append(item)
     for _ in ins:
         state.outs.pop()
     state.outs.extend(new_outs)
+    return state
 
 def apply_item(state, item):
     if item[0] == 'quot':
@@ -136,6 +154,8 @@ def apply_item(state, item):
         state1 = apply_item(clone(state), item1)
         state2 = apply_item(clone(state), item2)
         return combine(state1, state2)
+    elif item[0] == 'effect':
+        return apply_effect(state, item[1])
     err = 'Call and dip needs literal quotations!'
     raise TypeCheckError(err)
 
@@ -178,17 +198,15 @@ def apply_quot(state, quot):
 def infer_quot(quot):
     state = StackState([], [])
     state = apply_quot(state, quot)
-    outs = [infer_quot(it) if it[0] == 'quot' else it
+    outs = [('effect', infer_quot(it)) if it[0] == 'quot' else it
             for it in state.outs]
-    return StackState(tuple(state.ins), tuple(outs))
+    return tuple(state.ins), tuple(outs)
 
 def infer(quot):
     state = infer_quot(quot)
     return rename(state)
 
 if __name__ == '__main__':
-    print(parse_effect('( -- ( a -- b ) )'))
-
     parser = ArgumentParser(description = 'CCrap type-checker')
     parser.add_argument('--quot', '-q',
                         type = str, required = True,

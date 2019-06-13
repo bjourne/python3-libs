@@ -1,6 +1,10 @@
 from ccrap.lexer import Lexer, LexerError
 from ccrap.parser import Parser
-from ccrap.typechecker import StackState, combine, format, infer
+from ccrap.typechecker import (BUILTINS,
+                               StackState,
+                               apply_effect,
+                               combine, format, infer, parse_effect,
+                               rename)
 
 def test_combine():
     # Corresponds to dup
@@ -10,7 +14,44 @@ def test_combine():
     assert state3.ins == [('dyn', 'a')]
     assert state3.outs == [('dyn', 'a'), ('dyn', 'b')]
 
+def sym(x):
+    return 'sym', x
+
+def effect(l, r):
+    return 'effect', (l, r)
+
+def test_parse_effect():
+    examples = [
+        ('( a -- b )', ((sym('a'),), (sym('b'),))),
+        ('( a ( b -- c ) -- a )', ((sym('a'), effect((sym('b'),), (sym('c'),))), (sym('a'),))),
+        ('( -- 10 )', ((), (('int', 10),)))
+        ]
+    for inp, expected_out in examples:
+        out = parse_effect(inp)
+        assert out == expected_out
+
+def test_apply_effect():
+    state = StackState([], [])
+    eff = parse_effect('( -- a a )')
+    apply_effect(state, eff)
+    assert format(rename(state)) == '( -- a a )'
+
+    state = StackState([], [])
+    eff = parse_effect('( -- 1 2 3 )')
+    apply_effect(state, eff)
+    assert format(rename(state)) == '( -- 1 2 3 )'
+
+    state = StackState([], [])
+    eff = parse_effect('( -- ( -- ) )')
+    apply_effect(state, eff)
+    assert format(rename(state)) == '( -- ( -- ) )'
+
 def test_typechecking():
+
+    # For testing purposes
+    BUILTINS['foo'] = parse_effect('( -- ( -- ) )')
+    BUILTINS['foo1'] = parse_effect('( -- ( -- a ) )')
+
     examples = [
         ('[ swap ]', '( a b -- b a )'),
         ('[ swap swap ]', '( a b -- a b )'),
@@ -50,7 +91,11 @@ def test_typechecking():
         ('[ 0 0 [ ] [ ] ? [ ] ? call ]', '( -- )'),
 
         # Dip with either types
-        ('[ [ ] [ ] ? dip ]', '( a b -- a )')
+        ('[ [ ] [ ] ? dip ]', '( a b -- a )'),
+
+        # Calling hofs
+        ('[ foo call ]', '( -- )'),
+        ('[ foo1 call ]', '( -- a )')
     ]
     for inp, expected_out in examples:
         parser = Parser(Lexer(inp))
@@ -131,7 +176,7 @@ def test_parser():
          [
              ('def',
               ('main',
-               (('argc', 'argv'), ()),
+               ((('sym', 'argc'), ('sym', 'argv')), ()),
                (
                    ('sym', 'drop'),
                ),))
@@ -159,7 +204,7 @@ def test_parser():
          [
              ('def',
               ('times',
-               (('a', 'b'), ('c',)),
+               ((('sym', 'a'), ('sym', 'b')), (('sym', 'c'),)),
                (
                    ('quot',
                     (

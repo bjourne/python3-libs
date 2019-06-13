@@ -74,11 +74,32 @@ class Parser:
         except ValueError:
             self.wrong_token(v, 'an integer')
 
+    def parse_effect_token(self, type, val):
+        if val == '(':
+            return 'effect', self.parse_effect_rec()
+        elif val.isdigit():
+            return 'int', int(val)
+        return type, val
+
+    def parse_effect_side(self, stop_sym):
+        body = []
+        while True:
+            tok = self.next_token()
+            if not tok:
+                self.end_of_file('`%s`' % stop_sym)
+            type, val = tok
+            if val == stop_sym:
+                return tuple(body)
+            body.append(self.parse_effect_token(type, val))
+
+    def parse_effect_rec(self):
+        lhs = self.parse_effect_side('--')
+        rhs = self.parse_effect_side(')')
+        return lhs, rhs
+
     def parse_effect(self):
         self.match_token('(')
-        lhs = tuple(self.parse_until('--'))
-        rhs = tuple(self.parse_until(')'))
-        return (lhs, rhs)
+        return self.parse_effect_rec()
 
     def parse_token(self, type, val):
         if val == '[':
