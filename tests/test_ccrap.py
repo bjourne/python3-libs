@@ -95,7 +95,11 @@ def test_typechecking():
 
         # Calling hofs
         ('[ foo call ]', '( -- )'),
-        ('[ foo1 call ]', '( -- a )')
+        ('[ foo1 call ]', '( -- a )'),
+
+        # Composing
+        ('[ [ ] [ ] compose call ]', '( -- )'),
+        ('[ [ 12 ] [ 24 ] compose ]', '( -- ( -- 12 24 ) )')
     ]
     for inp, expected_out in examples:
         parser = Parser(Lexer(inp))

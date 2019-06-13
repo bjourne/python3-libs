@@ -179,6 +179,13 @@ def apply_qm(state):
     state.outs.pop()
     state.outs.append(('either', (item1, item2)))
 
+def apply_compose(state):
+    ensure(state, 2)
+    tok2, val2 = state.outs.pop()
+    tok1, val1 = state.outs.pop()
+    assert tok1 == 'quot' and tok2 == 'quot'
+    state.outs.append(('quot', val1 + val2))
+
 def apply_quot(state, quot):
     for tok, val in quot[1]:
         if tok == 'int':
@@ -189,6 +196,8 @@ def apply_quot(state, quot):
             state = apply_call(state)
         elif val == 'dip':
             state = apply_dip(state)
+        elif val == 'compose':
+            apply_compose(state)
         elif val == '?':
             apply_qm(state)
         else:
