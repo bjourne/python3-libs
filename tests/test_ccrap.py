@@ -87,6 +87,10 @@ def test_typechecking():
         ('[ [ 4 ] [ 4 ] ? call ]', '( a -- 4 )'),
         ('[ 0 0 [ 4 ] [ 4 ] ? [ 4 ] ? call ]', '( -- 4 )'),
 
+        # Either with hofs
+        ('[ [ ] [ ] ? ]', '( a -- ( -- ) )'),
+        ('[ 0 [ 10 ] [ dup ] ? ]', '( -- ( a -- a b ) )'),
+
         # Nested either types
         ('[ 0 0 [ ] [ ] ? [ ] ? call ]', '( -- )'),
 

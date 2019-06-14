@@ -204,11 +204,23 @@ def apply_quot(state, quot):
             apply_effect(state, BUILTINS[val])
     return state
 
+def infer_item(item):
+    if item[0] == 'quot':
+        return 'effect', infer_quot(item)
+    elif item[0] == 'either':
+        print(item)
+        item1, item2 = item[1]
+        state1 = apply_item(StackState([], []), item1)
+        state2 = apply_item(StackState([], []), item2)
+        state3 = combine(state1, state2)
+        return 'effect', (tuple(state3.ins), tuple(state3.outs))
+    else:
+        return item
+
 def infer_quot(quot):
     state = StackState([], [])
     state = apply_quot(state, quot)
-    outs = [('effect', infer_quot(it)) if it[0] == 'quot' else it
-            for it in state.outs]
+    outs = map(infer_item, state.outs)
     return tuple(state.ins), tuple(outs)
 
 def infer(quot):
