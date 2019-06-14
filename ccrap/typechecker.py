@@ -7,6 +7,18 @@ from string import ascii_lowercase
 from sys import exit
 
 ########################################################################
+# The types so far:
+#
+#   compose - a composition of two callables
+#   dyn
+#   effect  - a stack effect
+#   either
+#   int
+#   quot    - a literal quotation
+#
+# blabla_item if the object is tagged, blabla_quot if it is not.
+
+########################################################################
 # Name generation
 ########################################################################
 NEXT_NAME = -1
@@ -21,7 +33,7 @@ def gensym():
 StackState = namedtuple('StackState', ['ins', 'outs'])
 
 def clone(state):
-    return StackState(list(state.ins), list(state.outs))
+    return StackState(list(state[0]), list(state[1]))
 
 def height(state):
     return len(state.outs) - len(state.ins)
@@ -44,8 +56,8 @@ def rename_rec(eff, conv):
                 conv[tokval] = rename_rec(val, conv)
             else:
                 conv[tokval] = gensym()
-    new_ins = tuple([conv[n] for n in ins])
-    new_outs = tuple([conv[n] for n in outs])
+    new_ins = [conv[n] for n in ins]
+    new_outs = [conv[n] for n in outs]
     return new_ins, new_outs
 
 def rename(eff):
@@ -76,6 +88,7 @@ def parse_effect(str):
 def combine(state1, state2):
     err = 'Cannot combine incompatible effects, %s and %s.'
     if height(state1) != height(state2):
+        print(state1, state2)
         eff1_str = format(rename(state1))
         eff2_str = format(rename(state2))
         raise TypeCheckError(err % (eff1_str, eff2_str))
@@ -146,48 +159,50 @@ def apply_effect(state, eff):
     state.outs.extend(new_outs)
     return state
 
-def apply_item(state, item):
+def apply_callable(state, item):
     if item[0] == 'quot':
-        return apply_quot(state, item)
+        return apply_quot(state, item[1])
     elif item[0] == 'either':
         item1, item2 = item[1]
-        state1 = apply_item(clone(state), item1)
-        state2 = apply_item(clone(state), item2)
+        state1 = apply_callable(clone(state), item1)
+        state2 = apply_callable(clone(state), item2)
         return combine(state1, state2)
     elif item[0] == 'effect':
         return apply_effect(state, item[1])
-    err = 'Call and dip needs literal quotations!'
+    elif item[0] == 'compose':
+        item1, item2 = item[1]
+        return apply_callable(apply_callable(state, item1), item2)
+    err = 'Call and dip parameters needs to be known!'
     raise TypeCheckError(err)
 
 def apply_call(state):
     ensure(state, 1)
     item = state.outs.pop()
-    return apply_item(state, item)
+    return apply_callable(state, item)
 
 def apply_dip(state):
     ensure(state, 2)
     item = state.outs.pop()
     saved = state.outs.pop()
-    state = apply_item(state, item)
+    state = apply_callable(state, item)
     state.outs.append(saved)
     return state
 
 def apply_qm(state):
     ensure(state, 3)
-    item1 = state.outs.pop()
     item2 = state.outs.pop()
+    item1 = state.outs.pop()
     state.outs.pop()
     state.outs.append(('either', (item1, item2)))
 
 def apply_compose(state):
     ensure(state, 2)
-    tok2, val2 = state.outs.pop()
-    tok1, val1 = state.outs.pop()
-    assert tok1 == 'quot' and tok2 == 'quot'
-    state.outs.append(('quot', val1 + val2))
+    item2 = state.outs.pop()
+    item1 = state.outs.pop()
+    state.outs.append(('compose', (item1, item2)))
 
 def apply_quot(state, quot):
-    for tok, val in quot[1]:
+    for tok, val in quot:
         if tok == 'int':
             state.outs.append(('int', val))
         elif tok == 'quot':
@@ -196,7 +211,7 @@ def apply_quot(state, quot):
             state = apply_call(state)
         elif val == 'dip':
             state = apply_dip(state)
-        elif val == 'compose':
+        elif val == '++':
             apply_compose(state)
         elif val == '?':
             apply_qm(state)
@@ -205,14 +220,28 @@ def apply_quot(state, quot):
     return state
 
 def infer_item(item):
+    err = 'Both operands to `++` needs to be callables!'
     if item[0] == 'quot':
-        return 'effect', infer_quot(item)
+        return 'effect', infer_quot(item[1])
     elif item[0] == 'either':
-        print(item)
+        # Not awesome code, but it produces the right result
         item1, item2 = item[1]
-        state1 = apply_item(StackState([], []), item1)
-        state2 = apply_item(StackState([], []), item2)
-        state3 = combine(state1, state2)
+        tp1, state1 = infer_item(item1)
+        tp2, state2 = infer_item(item2)
+        if tp1 != 'effect' or tp2 != 'effect':
+            return item
+        state3 = combine(clone(state1), clone(state2))
+        return 'effect', (tuple(state3.ins), tuple(state3.outs))
+    elif item[0] == 'compose':
+        item1, item2 = item[1]
+        tp1, state1 = infer_item(item1)
+        tp2, state2 = infer_item(item2)
+
+        if tp1 != 'effect' or tp2 != 'effect':
+            raise TypeCheckError(err)
+        state3 = StackState([], [])
+        state3 = apply_effect(state3, state1)
+        state3 = apply_effect(state3, state2)
         return 'effect', (tuple(state3.ins), tuple(state3.outs))
     else:
         return item
@@ -223,8 +252,8 @@ def infer_quot(quot):
     outs = map(infer_item, state.outs)
     return tuple(state.ins), tuple(outs)
 
-def infer(quot):
-    state = infer_quot(quot)
+def infer(item):
+    state = infer_quot(item[1])
     return rename(state)
 
 if __name__ == '__main__':
