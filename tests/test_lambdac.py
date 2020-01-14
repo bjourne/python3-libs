@@ -1,5 +1,5 @@
 # Copyright (C) 2019 Björn Lindqvist <bjourne@gmail.com>
-from lambdac import *
+from programs.lambdac import *
 
 # See https://www.easycalculation.com/analytical/lambda-calculus.php
 def test_format():

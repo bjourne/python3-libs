@@ -1,6 +1,7 @@
+# Copyright (C) 2020 Björn Lindqvist <bjourne@gmail.com>
 from os import name as sys_name
 from os.path import getsize
-from downloader import download_file, get_headers, local_path
+from tools.downloader import download_file, get_headers, local_path
 
 MATH_URL = 'https://math.stackexchange.com/questions/2582627/prove-sequent-using-natural-deduction'
 
@@ -14,7 +15,7 @@ def test_local_path():
         assert path == '/etc/passwd'
 
 def test_get_headers():
-    fname = 'test_downloader.py'
+    fname = 'tests/test_downloader.py'
     headers = get_headers(fname)
     size = getsize(fname)
     assert headers['Range'] == 'bytes=%d-' % size

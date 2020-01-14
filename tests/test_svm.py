@@ -1,3 +1,4 @@
+# Copyright (C) 2020 Björn Lindqvist <bjourne@gmail.com>
 from numpy import array
 from numpy.testing import assert_approx_equal
 from learning.svm import SVM

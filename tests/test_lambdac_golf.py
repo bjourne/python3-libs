@@ -1,5 +1,5 @@
 # Copyright (C) 2019 Björn Lindqvist <bjourne@gmail.com>
-from lambdac_golf import *
+from programs.lambdac_golf import *
 
 def test_eval():
     examples = [

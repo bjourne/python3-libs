@@ -1,3 +1,4 @@
+# Copyright (C) 2020 Björn Lindqvist <bjourne@gmail.com>
 from os.path import exists, getsize, isdir, join
 from requests import get
 from shutil import copyfileobj
