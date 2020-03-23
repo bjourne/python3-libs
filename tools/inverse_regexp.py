@@ -1,5 +1,4 @@
 # Copyright (C) 2020 Björn Lindqvist <bjourne@gmail.com>
-
 r"""Generation of strings matching regexps.
 
 This module contains a function `inverse_regexp` which takes a regexp
@@ -42,7 +41,9 @@ Another limitation is that only ASCII is supported:
 
 And so on.
 
-Look-ahead and look-behind is for obvious reasons not supported."""
+Features such as look-ahead, look-behind and capturing groups are for
+obvious reasons not supported.
+"""
 from itertools import chain, product
 from sre_constants import *
 from sre_parse import parse
@@ -62,8 +63,6 @@ CATEGORIES = {
     CATEGORY_SPACE : WHITESPACE,
     CATEGORY_WORD : WORDS,
 }
-
-
 
 def handle_any(toks):
     return ALL_CHARACTERS
@@ -87,6 +86,8 @@ def handle_literal(tok):
     return frozenset(chr(tok))
 
 def handle_max_repeat(tok):
+    """Handle a repeat token such as {x,y} or ?.
+    """
     min, max, toks = tok
     assert len(toks) == 1
     if max == MAXREPEAT:
@@ -129,16 +130,14 @@ def handle_tok(tok):
     return HANDLERS[op](arg)
 
 def handle_toks(toks):
-    """
-    Returns a generator of strings of possible permutations for this
+    """Returns a generator of strings of possible permutations for this
     regexp token list.
     """
     lists = [handle_tok(tok) for tok in toks]
     return frozenset(''.join(it) for it in product(*lists))
 
 def inverse_regexp(s):
-    """
-    Inverts a regexp.
+    """Returns a set of all strings matching the given regexp.
 
     >>> for s in inverse_regexp(r'\\d\\w'): print(s)
     0a
