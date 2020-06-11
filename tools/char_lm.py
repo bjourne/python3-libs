@@ -210,7 +210,8 @@ def evaluate_epoch(model, crit, state, samples):
     return accum_loss / len(samples)
 
 def run_training(model_type, path,
-                 batch_size, em_size, seq_len,
+                 batch_size, em_size, rnn_hidden_size,
+                 seq_len,
                  log_interval, epochs):
 
     dev = 'cuda' if cuda.is_available() else 'cpu'
@@ -224,7 +225,7 @@ def run_training(model_type, path,
     train, test, valid = tensors
 
     if model_type == 'rnn':
-        model = RNN(len(ix2ch), em_size, 700, 1, 0.1)
+        model = RNN(len(ix2ch), em_size, rnn_hidden_size, 1, 0.1)
     else:
         n_levels = 3
         n_hidden = 450
@@ -278,13 +279,14 @@ def main():
     args = docopt(__doc__, version = 'Char-based LM 1.0')
     batch_size = int(args['--batch-size'])
     em_size = int(args['--em-size'])
+    rnn_hidden_size = int(args['--hidden-size'])
     seq_len = int(args['--seq-len'])
     log_interval = int(args['--log-interval'])
     epochs = int(args['--epochs'])
     path = args['<path>']
     model_type = 'rnn' if args['rnn'] else 'tcn'
     run_training(model_type, path,
-                 batch_size, em_size, seq_len,
+                 batch_size, em_size, rnn_hidden_size, seq_len,
                  log_interval, epochs)
 
 if __name__ == '__main__':
