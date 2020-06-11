@@ -17,4 +17,4 @@ def test_lcp_array():
         ]
     for seq, lcp in examples:
         sa = suffix_array(seq)
-        assert lcp_array(seq, sa) == lcp
+        assert lcp_array(seq, sa)[1] == lcp
