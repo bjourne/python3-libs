@@ -9,8 +9,8 @@ one on temporal convolutional networks (tcn). They are trained using
 the Peen Treebank dataset.
 
 Usage:
-    char_lm.py [options] <path> rnn [--hidden-size=<i>]
-    char_lm.py [options] <path> tcn
+    char_lm_torch.py [options] <path> rnn [--hidden-size=<i>]
+    char_lm_torch.py [options] <path> tcn
 
 Options:
     -h --help               show this screen
