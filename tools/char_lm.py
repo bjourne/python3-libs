@@ -1,10 +1,15 @@
 # Copyright (C) 2020 Björn Lindqvist <bjourne@gmail.com>
 #
 # Character-based language model in PyTorch.
-"""Character-based LM
+"""
+Char-based LM in PyTorch
+========================
+Two models are available; one based on recurrent networks (rnn) and
+one on temporal convolutional networks (tcn). They are trained using
+the Peen Treebank dataset.
 
 Usage:
-    char_lm.py [options] <path> rnn [more-opts]
+    char_lm.py [options] <path> rnn [--hidden-size=<i>]
     char_lm.py [options] <path> tcn
 
 Options:
@@ -16,6 +21,7 @@ Options:
     --seq-len=<i>           sequence length [default: 320]
     --log-interval=<i>      log every i:th minibatch [default: 200]
     --hidden-size=<i>       features in the hidden state [default: 700]
+
 """
 from docopt import docopt
 from observations import ptb
@@ -243,8 +249,8 @@ def run_training(model_type, path,
     opt = SGD(model.parameters(), lr = 4)
     clip_norm = 0.15
 
-    train = list(successor_samples(train, seq_len))
-    valid = list(successor_samples(valid, seq_len))
+    train = successor_samples(train, seq_len)
+    valid = successor_samples(valid, seq_len)
 
     # Copy samples to the device
     train = [(x.to(dev), y.to(dev)) for (x, y) in train]
@@ -254,7 +260,7 @@ def run_training(model_type, path,
         assert x.shape == (batch_size, seq_len)
         assert y.shape == (batch_size, seq_len)
 
-    fmt = '\-> %2d / %2d - %3ds - %.3f - %.4f %s'
+    fmt = '\-> %2d / %2d - %3ds - %.4f - %.4f %s'
     losses = []
     for i in range(epochs):
         last_time = time()
@@ -271,7 +277,6 @@ def run_training(model_type, path,
             mark = '*'
         print(fmt % (i + 1, epochs, elapsed, lr, loss, mark))
         if i > 5 and loss > max(losses[-3:]):
-            print('Decreasing learning rate.')
             opt.param_groups[0]['lr'] /= 10
         losses.append(loss)
 
