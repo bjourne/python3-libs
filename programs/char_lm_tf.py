@@ -16,7 +16,6 @@ Options:
     --batch-size=<i>        batch size [default: 32]
     --epochs=<i>            number of epochs [default: 200]
     --seq-len=<i>           sequence length [default: 320]
-    --hidden-size=<i>       features in the hidden state [default: 700]
 
 Validation losses:
              best   ep10   ep20   ep50   ep100
@@ -47,17 +46,21 @@ from tensorflow.tpu.experimental import initialize_tpu_system
 from time import time
 import tensorflow as tf
 
+def compute_and_apply_gradients(model, x, y):
+    with tf.GradientTape() as tape:
+        y_hat = model(x, training = True)
+        loss = model.compiled_loss(y, y_hat,
+                                   regularization_losses = model.losses)
+    vars = model.trainable_variables
+    grads = tape.gradient(loss, vars)
+    grads = [tf.clip_by_norm(g, 0.5) for g in grads]
+    model.optimizer.apply_gradients(zip(grads, vars))
+    return y_hat
+
 class MyModel(Model):
     def train_step(self, data):
         x, y = data
-        with tf.GradientTape() as tape:
-            y_hat = self(x, training = True)
-            loss = self.compiled_loss(y, y_hat,
-                                      regularization_losses=self.losses)
-        vars = self.trainable_variables
-        grads = tape.gradient(loss, vars)
-        grads = [tf.clip_by_norm(g, 0.5) for g in grads]
-        self.optimizer.apply_gradients(zip(grads, vars))
+        y_hat = compute_and_apply_gradients(self, x, y)
         self.compiled_metrics.update_state(y, y_hat)
         return {m.name: m.result() for m in self.metrics}
 
@@ -108,14 +111,7 @@ class LossAccObserver:
 @tf.function
 def train_epoch(model, strategy, batch_size, dataset, obs):
     def step_fn(x, y):
-        with tf.GradientTape() as tape:
-            y_hat = model(x, training = True)
-            loss = model.compiled_loss(y, y_hat,
-                                       regularization_losses=model.losses)
-        vars = model.trainable_variables
-        grads = tape.gradient(loss, vars)
-        grads = [tf.clip_by_norm(g, 0.5) for g in grads]
-        model.optimizer.apply_gradients(zip(grads, vars))
+        y_hat = compute_and_apply_gradients(model, x, y)
         obs.update(y, y_hat)
     for x, y in dataset:
         strategy.run(step_fn, args = (x, y))
