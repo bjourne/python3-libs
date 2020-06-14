@@ -20,8 +20,16 @@ Options:
 
 Validation losses:
              best   ep10   ep20   ep50   ep100
-    auto    0.9356 1.2161 1.0603 0.9620 0.9356
-    manual  0.9544 1.0595 0.9848 0.9544 1.xxxx
+    auto    0.9483 1.0704 0.9892 0.9483 0.9483
+    auto    0.9470 1.0924 1.0059 0.9496 0.9470
+    auto    0.9483 1.0783 0.9732 0.9483 0.9483
+    auto    0.9534 1.0626 0.9885 0.9534 0.9534
+    auto    0.9544 1.0447 0.9770 0.9544 0.9544
+    manual  0.9544 1.0595 0.9848 0.9544 0.9544
+    manual  0.9483 1.1425 1.0478 0.9628 0.9483
+    manual  0.9490 1.0937 1.0067 0.9516 0.9490
+    manual  0.9491 1.2303 1.0864 0.9728 0.9491
+    manual  0.9465 1.1122 1.0206 0.9520 0.9465
 """
 from docopt import docopt
 from observations import ptb
@@ -129,7 +137,8 @@ def manual_training(model, strategy, train, valid, batch_size, epochs):
     train = distribute_dataset(strategy, train, batch_size_per_replica)
     valid = distribute_dataset(strategy, valid, batch_size_per_replica)
 
-    fmt = '\-> %3d / %3d - %4db - %3ds - %.4f / %.4f - %.2f / %.2f'
+    fmt = '\-> %3d / %3d - %4db - %3ds - %.4f / %.4f - %.2f / %.2f %s'
+    val_losses = []
     last_time = time()
     last_n_steps = 0
     for i in range(epochs):
@@ -137,15 +146,21 @@ def manual_training(model, strategy, train, valid, batch_size, epochs):
         train_epoch(model, strategy, batch_size, train, train_obs)
         evaluate_epoch(model, strategy, valid, valid_obs)
         new_time = time()
+        val_loss = valid_obs.loss.result()
+
         new_n_steps = model.optimizer.iterations.numpy()
         time_delta = new_time - last_time
         n_steps_delta = new_n_steps - last_n_steps
+        mark = ' '
+        if val_loss < min(val_losses, default = 100):
+            mark = '*'
         args = (i + 1, epochs, n_steps_delta, time_delta,
-                train_obs.loss.result(), valid_obs.loss.result(),
-                train_obs.acc.result(), valid_obs.acc.result())
+                train_obs.loss.result(), val_loss,
+                train_obs.acc.result(), valid_obs.acc.result(), mark)
         print(fmt % args)
         last_time = new_time
         last_n_steps = new_n_steps
+        val_losses.append(val_loss)
         train_obs.reset()
         valid_obs.reset()
 
@@ -153,7 +168,8 @@ def automatic_training(model, train, valid, batch_size, epochs):
     train = train.batch(batch_size, drop_remainder = True)
     valid = valid.batch(batch_size, drop_remainder = True)
     model.fit(x = train, validation_data = valid,
-              epochs = epochs)
+              epochs = epochs,
+              verbose = 2)
 
 def main():
     # Parameters.
