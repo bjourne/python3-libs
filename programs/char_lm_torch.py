@@ -4,13 +4,15 @@
 """
 Char-based LM in PyTorch
 ========================
-Two models are available; one based on recurrent networks (rnn) and
-one on temporal convolutional networks (tcn). They are trained using
+Character based language models in PyTorch. This module contains
+implementations based on recurrent networks (rnn), temporal
+convolutional networks (tcn) and transformers. They are trained using
 the Peen Treebank dataset.
 
 Usage:
     char_lm_torch.py [options] <path> rnn [--hidden-size=<i>]
     char_lm_torch.py [options] <path> tcn
+    char_lm_torch.py [options] <path> trans
 
 Options:
     -h --help               show this screen
@@ -21,6 +23,13 @@ Options:
     --seq-len=<i>           sequence length [default: 320]
     --log-interval=<i>      log every i:th minibatch [default: 200]
     --hidden-size=<i>       features in the hidden state [default: 700]
+
+Validation losses:
+             best    ep10    ep20    ep50    ep100  s/e
+    transf  0.942   1.040   0.982   0.942    0.942   46
+    tcn     0.955   1.055   1.002   0.969    0.955  188
+    rnn     0.947   1.041   0.985   0.947    x.xxx   47
+
 """
 from docopt import docopt
 from observations import ptb
@@ -32,6 +41,74 @@ from torch.nn import *
 from torch.nn.utils import clip_grad_norm_, weight_norm
 from torch.optim import Adam, SGD
 import torch
+import math
+
+class PositionalEncoding(Module):
+    def __init__(self, d_model, dropout, max_len):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = Dropout(p=dropout)
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float)\
+                        .unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() *
+                             (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        x = x + self.pe[:x.size(0), :]
+        return self.dropout(x)
+
+class TransformerModel(Module):
+    def __init__(self, vocab_size, ninp, nhead, nhid, nlayers, dropout):
+        super(TransformerModel, self).__init__()
+        self.model_type = 'Transformer'
+        self.src_mask = None
+        self.pos_encoder = PositionalEncoding(ninp, dropout, 5000)
+        encoder_layers = TransformerEncoderLayer(ninp, nhead, nhid,
+                                                 dropout)
+        self.transformer_encoder = TransformerEncoder(encoder_layers,
+                                                      nlayers)
+        self.encoder = Embedding(vocab_size, ninp)
+        self.ninp = ninp
+        self.decoder = Linear(ninp, vocab_size)
+
+        self.init_weights()
+
+    def _generate_square_subsequent_mask(self, sz):
+        mask = (torch.triu(torch.ones(sz, sz)) == 1).t()
+        mask = mask.float().masked_fill(mask == 0, float('-inf'))\
+                           .masked_fill(mask == 1, float(0.0))
+        return mask
+
+    def init_weights(self):
+        initrange = 0.1
+        self.encoder.weight.data.uniform_(-initrange, initrange)
+        self.decoder.bias.data.zero_()
+        self.decoder.weight.data.uniform_(-initrange, initrange)
+
+    def forward(self, src, state):
+        src = src.t()
+        if (self.src_mask is None or
+            self.src_mask.size(0) != src.size(0)):
+            device = src.device
+            mask = self._generate_square_subsequent_mask(src.size(0))
+            mask = mask.to(device)
+            self.src_mask = mask
+
+        src = self.encoder(src) * math.sqrt(self.ninp)
+        src = self.pos_encoder(src)
+        out = self.transformer_encoder(src, self.src_mask)
+        out = self.decoder(out)
+        out = out.transpose(0, 1)
+        out = out.reshape(out.size(0)*out.size(1), out.size(2))
+        return out, state
+
+    def init_state(self, batch_size, device):
+        return []
 
 # TCN module comes from https://github.com/locuslab/TCN
 class Chomp1d(Module):
@@ -178,11 +255,10 @@ def train_epoch(model, opt, clip_norm, crit, state, samples,
     accum_loss = 0
     last_time = time()
     n_samples = len(samples)
-    log_fmt = '%5d / %5d | %3ds | %.4f'
+    log_fmt = '%5d / %5d | %3ds | %.3f'
     model.train()
     for i, (x, y) in enumerate(samples):
         y_hat, state = model(x, detach(state))
-
         loss = crit(y_hat, y.reshape(-1))
         accum_loss += loss.item()
 
@@ -221,6 +297,7 @@ def run_training(model_type, path,
     # Translation table
     ix2ch = sorted(set(texts[0]))
     ch2ix = {c : i for i, c in enumerate(ix2ch)}
+    vocab_size = len(ix2ch)
 
     tensors = [torch.LongTensor([ch2ix[c] for c in text])
                for text in texts]
@@ -228,13 +305,16 @@ def run_training(model_type, path,
     train, test, valid = tensors
 
     if model_type == 'rnn':
-        model = RNN(len(ix2ch), em_size, rnn_hidden_size, 1, 0.1)
-    else:
+        model = RNN(vocab_size, em_size, rnn_hidden_size, 1, 0.1)
+    elif model_type == 'tcn':
         n_levels = 3
         n_hidden = 450
         k_size = 3
         n_chans = [n_hidden] * (n_levels - 1) + [em_size]
-        model = TCN(len(ix2ch), em_size, n_chans, k_size, 0.1, 0.1)
+        model = TCN(vocab_size, em_size, n_chans, k_size, 0.1, 0.1)
+    else:
+        model = TransformerModel(vocab_size, 100, 4, 500, 4, 0.0)
+
     model = model.to(dev)
 
     crit = CrossEntropyLoss()
@@ -252,11 +332,13 @@ def run_training(model_type, path,
         assert x.shape == (batch_size, seq_len)
         assert y.shape == (batch_size, seq_len)
 
-    fmt = '\-> %2d / %2d - %3ds - %.4f - %.4f %s'
+    fmt = '\-> %2d / %2d - %3ds - %.4f - %.3f %s'
     losses = []
     for i in range(epochs):
         last_time = time()
         state = model.init_state(batch_size, dev)
+        if model_type != 'rnn':
+            shuffle(train)
         train_epoch(model, opt, clip_norm, crit, state, train,
                     log_interval)
         shuffle(valid)
@@ -284,10 +366,14 @@ def main():
     log_interval = int(args['--log-interval'])
     epochs = int(args['--epochs'])
     path = args['<path>']
-    model_type = 'rnn' if args['rnn'] else 'tcn'
+
+    model_type = None
+    for t in ['rnn', 'tcn', 'trans']:
+        if args[t]:
+            model_type = t
     run_training(model_type, path,
                  batch_size, em_size, rnn_hidden_size, seq_len,
                  log_interval, epochs)
+
 if __name__ == '__main__':
-    #colab_main()
     main()
