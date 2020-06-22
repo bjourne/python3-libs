@@ -21,7 +21,6 @@ Options:
     --seq-len=<i>           sequence length [default: 320]
     --log-interval=<i>      log every i:th minibatch [default: 200]
     --hidden-size=<i>       features in the hidden state [default: 700]
-
 """
 from docopt import docopt
 from observations import ptb
@@ -32,7 +31,6 @@ from torch import cuda, no_grad
 from torch.nn import *
 from torch.nn.utils import clip_grad_norm_, weight_norm
 from torch.optim import Adam, SGD
-from pytorch_model_summary import summary
 import torch
 
 # TCN module comes from https://github.com/locuslab/TCN
@@ -160,12 +158,6 @@ class RNN(Module):
         cs = torch.zeros(num_layers, batch_size, hidden_size)
         return hs.to(device), cs.to(device)
 
-def text_to_tensor(text):
-    ix2ch = sorted(set(text))
-    ch2ix = {c : i for i, c in enumerate(ix2ch)}
-    seq = torch.LongTensor([ch2ix[c] for c in text])
-    return ix2ch, ch2ix, seq
-
 def batchify(tensor, batch_size):
     # Cut off remainder
     n_batches = tensor.size(0) // batch_size
@@ -181,7 +173,8 @@ def successor_samples(batched_tensor, seq_len):
 def detach(state):
     return [s.detach() for s in state]
 
-def train_epoch(model, opt, clip_norm, crit, state, samples, log_interval):
+def train_epoch(model, opt, clip_norm, crit, state, samples,
+                log_interval):
     accum_loss = 0
     last_time = time()
     n_samples = len(samples)
@@ -189,7 +182,6 @@ def train_epoch(model, opt, clip_norm, crit, state, samples, log_interval):
     model.train()
     for i, (x, y) in enumerate(samples):
         y_hat, state = model(x, detach(state))
-
 
         loss = crit(y_hat, y.reshape(-1))
         accum_loss += loss.item()
@@ -225,9 +217,14 @@ def run_training(model_type, path,
     print('Using device %s.' % dev)
 
     texts = ptb(path)
-    tensors = [text_to_tensor(text) for text in texts]
-    ix2ch, ch2ix, _ = tensors[0]
-    tensors = [batchify(tensor[2], batch_size) for tensor in tensors]
+
+    # Translation table
+    ix2ch = sorted(set(texts[0]))
+    ch2ix = {c : i for i, c in enumerate(ix2ch)}
+
+    tensors = [torch.LongTensor([ch2ix[c] for c in text])
+               for text in texts]
+    tensors = [batchify(tensor, batch_size) for tensor in tensors]
     train, test, valid = tensors
 
     if model_type == 'rnn':
@@ -239,11 +236,6 @@ def run_training(model_type, path,
         n_chans = [n_hidden] * (n_levels - 1) + [em_size]
         model = TCN(len(ix2ch), em_size, n_chans, k_size, 0.1, 0.1)
     model = model.to(dev)
-
-    state = model.init_state(batch_size, dev)
-    inp = torch.zeros((batch_size, seq_len),
-                      dtype = torch.int64).to(dev)
-    print(summary(model, inp, state))
 
     crit = CrossEntropyLoss()
     opt = SGD(model.parameters(), lr = 4)
@@ -280,6 +272,9 @@ def run_training(model_type, path,
             opt.param_groups[0]['lr'] /= 10
         losses.append(loss)
 
+def colab_main():
+    run_training('rnn', '.', 32, 100, 512, 320, 200, 3)
+
 def main():
     args = docopt(__doc__, version = 'Char-based LM 1.0')
     batch_size = int(args['--batch-size'])
@@ -293,6 +288,6 @@ def main():
     run_training(model_type, path,
                  batch_size, em_size, rnn_hidden_size, seq_len,
                  log_interval, epochs)
-
 if __name__ == '__main__':
+    #colab_main()
     main()
