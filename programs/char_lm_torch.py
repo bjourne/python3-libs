@@ -26,14 +26,14 @@ Options:
 
 Validation losses:
              best    ep10    ep20    ep50    ep100  s/e
-    transf  0.942   1.040   0.982   0.942    0.942   46
+    trans   0.942   1.040   0.982   0.942    0.942   46
     tcn     0.955   1.055   1.002   0.969    0.955  188
-    rnn     0.947   1.041   0.985   0.947    x.xxx   47
+    rnn     0.947   1.041   0.985   0.947    0.947   47
 
 """
 from docopt import docopt
 from observations import ptb
-from os import environ
+from os import cpu_count
 from random import shuffle
 from time import time
 from torch import cuda, no_grad
@@ -43,38 +43,40 @@ from torch.optim import Adam, SGD
 import torch
 import math
 
-class PositionalEncoding(Module):
-    def __init__(self, d_model, dropout, max_len):
-        super(PositionalEncoding, self).__init__()
-        self.dropout = Dropout(p=dropout)
-
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float)\
-                        .unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() *
-                             (-math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0).transpose(0, 1)
-        self.register_buffer('pe', pe)
-
-    def forward(self, x):
-        x = x + self.pe[:x.size(0), :]
-        return self.dropout(x)
+def positional_encoding(max_len, emb_size):
+    '''Creates a (max_len, emb_size) tensor with precomputed values that
+    are used for positional encodings.'''
+    pe = torch.zeros(max_len, emb_size)
+    # (max_len, 1)
+    pos = torch.arange(0, max_len).float().unsqueeze(1)
+    div_term = torch.exp(torch.arange(0, emb_size, 2).float() *
+                         (-math.log(10000.0) / emb_size))
+    pe[:, 0::2] = torch.sin(pos * div_term)
+    pe[:, 1::2] = torch.cos(pos * div_term)
+    pe = pe.unsqueeze(0).transpose(0, 1)
+    return pe
 
 class TransformerModel(Module):
-    def __init__(self, vocab_size, ninp, nhead, nhid, nlayers, dropout):
+    def __init__(self,
+                 vocab_size, emb_size,
+                 nhead, nhid, nlayers, dropout):
         super(TransformerModel, self).__init__()
+
         self.model_type = 'Transformer'
-        self.src_mask = None
-        self.pos_encoder = PositionalEncoding(ninp, dropout, 5000)
-        encoder_layers = TransformerEncoderLayer(ninp, nhead, nhid,
+        self.x_mask = None
+
+        # Put the positional encoding in an untrainable buffer.
+        pe = positional_encoding(5000, emb_size)
+        self.register_buffer('pe', pe)
+        self.dropout = Dropout(p = dropout)
+
+        encoder_layers = TransformerEncoderLayer(emb_size, nhead, nhid,
                                                  dropout)
-        self.transformer_encoder = TransformerEncoder(encoder_layers,
-                                                      nlayers)
-        self.encoder = Embedding(vocab_size, ninp)
-        self.ninp = ninp
-        self.decoder = Linear(ninp, vocab_size)
+        self.transformer_encoder = TransformerEncoder(
+            encoder_layers, nlayers)
+        self.embedding = Embedding(vocab_size, emb_size)
+        self.emb_size = emb_size
+        self.linear = Linear(emb_size, vocab_size)
 
         self.init_weights()
 
@@ -86,23 +88,24 @@ class TransformerModel(Module):
 
     def init_weights(self):
         initrange = 0.1
-        self.encoder.weight.data.uniform_(-initrange, initrange)
-        self.decoder.bias.data.zero_()
-        self.decoder.weight.data.uniform_(-initrange, initrange)
+        self.embedding.weight.data.uniform_(-initrange, initrange)
+        self.linear.bias.data.zero_()
+        self.linear.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src, state):
-        src = src.t()
-        if (self.src_mask is None or
-            self.src_mask.size(0) != src.size(0)):
-            device = src.device
-            mask = self._generate_square_subsequent_mask(src.size(0))
+    def forward(self, x, state):
+        x = x.t()
+        if (self.x_mask is None or self.x_mask.size(0) != x.size(0)):
+            device = x.device
+            mask = self._generate_square_subsequent_mask(x.size(0))
             mask = mask.to(device)
-            self.src_mask = mask
+            self.x_mask = mask
 
-        src = self.encoder(src) * math.sqrt(self.ninp)
-        src = self.pos_encoder(src)
-        out = self.transformer_encoder(src, self.src_mask)
-        out = self.decoder(out)
+        x = self.embedding(x) * math.sqrt(self.emb_size)
+        x = x + self.pe[:x.size(0), :]
+        x = self.dropout(x)
+
+        out = self.transformer_encoder(x, self.x_mask)
+        out = self.linear(out)
         out = out.transpose(0, 1)
         out = out.reshape(out.size(0)*out.size(1), out.size(2))
         return out, state
@@ -191,21 +194,21 @@ class TCN(Module):
             embed_size, num_channels,
             kernel_size=kernel_size,
             dropout=dropout)
-        self.decoder = Linear(embed_size, vocab_size)
-        self.decoder.weight = self.encoder.weight
+        self.linear = Linear(embed_size, vocab_size)
+        self.linear.weight = self.encoder.weight
         self.drop = Dropout(emb_dropout)
         self.init_weights()
 
     def init_weights(self):
         initrange = 0.1
         self.encoder.weight.data.uniform_(-initrange, initrange)
-        self.decoder.bias.data.fill_(0)
-        self.decoder.weight.data.uniform_(-initrange, initrange)
+        self.linear.bias.data.fill_(0)
+        self.linear.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, x, state):
         emb = self.drop(self.encoder(x))
         y = self.tcn(emb.transpose(1, 2))
-        o = self.decoder(y.transpose(1, 2))
+        o = self.linear(y.transpose(1, 2))
         return o.reshape(-1, o.size(2)), state
 
     def init_state(self, batch_size, device):
@@ -290,11 +293,10 @@ def run_training(model_type, path,
 
     dev = 'cuda' if cuda.is_available() else 'cpu'
     dev = torch.device(dev)
-    print('Using device %s.' % dev)
+    print('Device: %s, CPU count: %d' % (dev, cpu_count()))
 
+    # Load data and create translation table.
     texts = ptb(path)
-
-    # Translation table
     ix2ch = sorted(set(texts[0]))
     ch2ix = {c : i for i, c in enumerate(ix2ch)}
     vocab_size = len(ix2ch)
@@ -355,7 +357,7 @@ def run_training(model_type, path,
         losses.append(loss)
 
 def colab_main():
-    run_training('rnn', '.', 32, 100, 512, 320, 200, 3)
+    run_training('trans', '.', 32, 100, 512, 320, 200, 200)
 
 def main():
     args = docopt(__doc__, version = 'Char-based LM 1.0')
@@ -376,4 +378,5 @@ def main():
                  log_interval, epochs)
 
 if __name__ == '__main__':
-    main()
+    colab_main()
+    #main()
