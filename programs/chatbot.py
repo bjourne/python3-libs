@@ -60,9 +60,6 @@ DROPOUT = 0.1
 # Calculated when loading the dataset
 VOCAB_SIZE = None
 
-# Convenience
-D_MODEL_F32 = tf.math.sqrt(tf.cast(D_MODEL, tf.float32))
-
 assert D_MODEL % N_HEADS == 0
 
 ########################################################################
@@ -193,22 +190,7 @@ def encoder_layer():
 
     return Model(inputs = [inp, inp_mask], outputs = out)
 
-def encoder():
-    # Layer definitions.
-    inp = Input(shape = (None,), name = 'inputs')
-    inp_mask = Input(shape = (1, 1, None), name = "padding_mask")
-    emb = Embedding(VOCAB_SIZE, D_MODEL)
-    pos_enc = PositionalEncoding()
-    dropout = Dropout(DROPOUT)
-    enc_layers = [encoder_layer() for _ in range(N_LAYERS)]
-
-    # Data flow.
-    out = dropout(pos_enc(emb(inp)))
-    for enc_layer in enc_layers:
-        out = enc_layer([out, inp_mask])
-    return Model(inputs = [inp, inp_mask], outputs = out)
-
-def decoder_layer(name):
+def decoder_layer():
     inp = Input(shape = (None, D_MODEL), name = "inputs")
     enc_out = Input(shape = (None, D_MODEL))
     look_ahead_mask = Input(shape = (1, None, None))
@@ -228,31 +210,44 @@ def decoder_layer(name):
 
     return Model(
         inputs = [inp, enc_out, look_ahead_mask, padding_mask],
-        outputs = out,
-        name = name)
+        outputs = out)
+
+def encoder():
+    # Layer definitions.
+    inp = Input(shape = (None,), name = 'inputs')
+    inp_mask = Input(shape = (1, 1, None), name = "padding_mask")
+
+    emb = Embedding(VOCAB_SIZE, D_MODEL)(inp)
+    emb *= tf.math.sqrt(tf.cast(D_MODEL, tf.float32))
+    emb = PositionalEncoding()(emb)
+
+    out = Dropout(DROPOUT)(emb)
+    for _ in range(N_LAYERS):
+        out = encoder_layer()([out, inp_mask])
+    return Model(inputs = [inp, inp_mask], outputs = out)
 
 def decoder():
-    inputs = Input(shape = (None,), name = 'inputs')
+    inp = Input(shape = (None,), name = 'inputs')
     enc_outputs = Input(shape = (None, D_MODEL), name = 'encoder_outputs')
     look_ahead_mask = Input(shape = (1, None, None),
                             name = 'look_ahead_mask')
     padding_mask = tf.keras.Input(shape = (1, 1, None),
                                   name = 'padding_mask')
 
-    d_model_f32 = tf.cast(D_MODEL, tf.float32)
-    embeddings = Embedding(VOCAB_SIZE, D_MODEL)(inputs)
-    embeddings *= d_model_f32
-    embeddings = PositionalEncoding()(embeddings)
+    emb = Embedding(VOCAB_SIZE, D_MODEL)(inp)
+    emb *= tf.math.sqrt(tf.cast(D_MODEL, tf.float32))
+    emb = PositionalEncoding()(emb)
 
-    outputs = Dropout(DROPOUT)(embeddings)
+    out = Dropout(DROPOUT)(emb)
 
     for i in range(N_LAYERS):
-        outputs = decoder_layer('decoder_layer_{}'.format(i),
-        )(inputs=[outputs, enc_outputs, look_ahead_mask, padding_mask])
+        out = decoder_layer()(inputs = [out, enc_outputs,
+                                        look_ahead_mask,
+                                        padding_mask])
 
     return Model(
-        inputs=[inputs, enc_outputs, look_ahead_mask, padding_mask],
-        outputs=outputs,
+        inputs = [inp, enc_outputs, look_ahead_mask, padding_mask],
+        outputs = out,
         name = 'decoder')
 
 def transformer():
@@ -314,7 +309,7 @@ def preprocess_dataset():
         lines = f.readlines()
 
     X, Y = [], []
-    for line in lines[:5000]:
+    for line in lines:
         parts = line.replace('\n', '').split(' +++$+++ ')
         convo = [line[1:-1] for line in parts[3][1:-1].split(', ')]
         for i in range(len(convo) - 1):
@@ -420,7 +415,7 @@ def main():
              {'outputs' : Y[:,1:]})
     ds = Dataset.from_tensor_slices(pairs) \
                 .shuffle(10000) \
-                .batch(BATCH_SIZE)
+                .batch(BATCH_SIZE, drop_remainder = True)
 
     lines = [
         'Where have you been?',
