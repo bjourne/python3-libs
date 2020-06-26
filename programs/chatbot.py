@@ -13,7 +13,7 @@ Variable names:
  * v: value
 '''
 from os import environ
-# environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 from pathlib import Path
 from re import sub
@@ -41,7 +41,7 @@ import tensorflow as tf
 ########################################################################
 # Configuration
 ########################################################################
-# Since this is just a toy example all configuration variables are
+# Since this is a toy example all configuration variables are
 # globals.
 
 BATCH_SIZE = 32
@@ -59,6 +59,9 @@ DROPOUT = 0.1
 
 # Calculated when loading the dataset
 VOCAB_SIZE = None
+
+# Convenience
+D_MODEL_F32 = tf.math.sqrt(tf.cast(D_MODEL, tf.float32))
 
 assert D_MODEL % N_HEADS == 0
 
@@ -94,6 +97,7 @@ def select_strategy():
 ########################################################################
 def scaled_dot_prod_attn(q, k, v, m):
     """Calculate the attention weights. """
+    assert m is not None
     matmul_qk = tf.matmul(q, k, transpose_b = True)
 
     # scale matmul_qk
@@ -149,9 +153,9 @@ class PositionalEncoding(Layer):
 class MultiHeadAttention(Layer):
     def __init__(self):
         super(MultiHeadAttention, self).__init__()
-        self.query_dense = Dense(D_MODEL)
-        self.key_dense = Dense(D_MODEL)
-        self.value_dense = Dense(D_MODEL)
+        self.wq = Dense(D_MODEL)
+        self.wk = Dense(D_MODEL)
+        self.wv = Dense(D_MODEL)
         self.dense = Dense(D_MODEL)
 
     def split_heads(self, inputs, batch_size):
@@ -160,18 +164,12 @@ class MultiHeadAttention(Layer):
             inputs, shape = (batch_size, -1, N_HEADS, depth))
         return tf.transpose(inputs, perm=[0, 2, 1, 3])
 
-    def call(self, inputs):
-        q, k, v, m = inputs['query'], inputs['key'], inputs[
-            'value'], inputs['mask']
+    def call(self, q, k, v, m):
         batch_size = tf.shape(q)[0]
 
-        q = self.query_dense(q)
-        k = self.key_dense(k)
-        v = self.value_dense(v)
-
-        q = self.split_heads(q, batch_size)
-        k = self.split_heads(k, batch_size)
-        v = self.split_heads(v, batch_size)
+        q = self.split_heads(self.wq(q), batch_size)
+        k = self.split_heads(self.wk(k), batch_size)
+        v = self.split_heads(self.wv(v), batch_size)
 
         scaled_attn = scaled_dot_prod_attn(q, k, v, m)
         scaled_attn = tf.transpose(scaled_attn, perm = [0, 2, 1, 3])
@@ -181,76 +179,57 @@ class MultiHeadAttention(Layer):
         return self.dense(concat_attn)
 
 def encoder_layer():
-    inputs = Input(shape=(None, D_MODEL), name = "inputs")
-    padding_mask = Input(shape=(1, 1, None), name = "padding_mask")
+    inp = Input(shape=(None, D_MODEL), name = "inputs")
+    inp_mask = Input(shape=(1, 1, None), name = "padding_mask")
 
-    attn = MultiHeadAttention()({
-            'query': inputs,
-            'key': inputs,
-            'value': inputs,
-            'mask': padding_mask
-        })
+    attn = MultiHeadAttention()(inp, inp, inp, inp_mask)
     attn = Dropout(DROPOUT)(attn)
-    attn = LayerNormalization(epsilon = EPS)(inputs + attn)
+    attn = LayerNormalization(epsilon = EPS)(inp + attn)
 
-    outs = Dense(UNITS, activation='relu')(attn)
-    outs = Dense(D_MODEL)(outs)
-    outs = Dropout(DROPOUT)(outs)
-    outs = LayerNormalization(epsilon = EPS)(attn + outs)
+    out = Dense(UNITS, activation='relu')(attn)
+    out = Dense(D_MODEL)(out)
+    out = Dropout(DROPOUT)(out)
+    out = LayerNormalization(epsilon = EPS)(attn + out)
 
-    return Model(inputs = [inputs, padding_mask], outputs = outs)
+    return Model(inputs = [inp, inp_mask], outputs = out)
 
 def encoder():
-    inputs = Input(shape = (None,), name = "inputs")
-    padding_mask = Input(shape = (1, 1, None), name = "padding_mask")
+    # Layer definitions.
+    inp = Input(shape = (None,), name = 'inputs')
+    inp_mask = Input(shape = (1, 1, None), name = "padding_mask")
+    emb = Embedding(VOCAB_SIZE, D_MODEL)
+    pos_enc = PositionalEncoding()
+    dropout = Dropout(DROPOUT)
+    enc_layers = [encoder_layer() for _ in range(N_LAYERS)]
 
-    embeddings = Embedding(VOCAB_SIZE, D_MODEL)(inputs)
-    embeddings *= tf.math.sqrt(tf.cast(D_MODEL, tf.float32))
-    embeddings = PositionalEncoding()(embeddings)
-
-    outputs = Dropout(rate = DROPOUT)(embeddings)
-
-    for i in range(N_LAYERS):
-        outputs = encoder_layer()([outputs, padding_mask])
-
-    return Model(inputs = [inputs, padding_mask], outputs = outputs)
+    # Data flow.
+    out = dropout(pos_enc(emb(inp)))
+    for enc_layer in enc_layers:
+        out = enc_layer([out, inp_mask])
+    return Model(inputs = [inp, inp_mask], outputs = out)
 
 def decoder_layer(name):
-    inputs = Input(shape = (None, D_MODEL),
-                   name = "inputs")
-    enc_outputs = Input(shape = (None, D_MODEL),
-                        name="encoder_outputs")
-    look_ahead_mask = Input(shape = (1, None, None),
-                            name = "look_ahead_mask")
-    padding_mask = tf.keras.Input(shape = (1, 1, None),
-                                  name = 'padding_mask')
+    inp = Input(shape = (None, D_MODEL), name = "inputs")
+    enc_out = Input(shape = (None, D_MODEL))
+    look_ahead_mask = Input(shape = (1, None, None))
+    padding_mask = tf.keras.Input(shape = (1, 1, None))
 
-    attn1 = MultiHeadAttention()(inputs={
-            'query': inputs,
-            'key': inputs,
-            'value': inputs,
-            'mask': look_ahead_mask
-        })
-    attn1 = LayerNormalization(epsilon = EPS)(attn1 + inputs)
+    attn1 = MultiHeadAttention()(inp, inp, inp, look_ahead_mask)
+    attn1 = LayerNormalization(epsilon = EPS)(attn1 + inp)
 
-    attn2 = MultiHeadAttention()(inputs={
-            'query': attn1,
-            'key': enc_outputs,
-            'value': enc_outputs,
-            'mask': padding_mask
-        })
+    attn2 = MultiHeadAttention()(attn1, enc_out, enc_out, padding_mask)
     attn2 = Dropout(DROPOUT)(attn2)
     attn2 = LayerNormalization(epsilon = EPS)(attn2 + attn1)
 
-    outputs = Dense(UNITS, activation='relu')(attn2)
-    outputs = Dense(D_MODEL)(outputs)
-    outputs = Dropout(DROPOUT)(outputs)
-    outputs = LayerNormalization(epsilon = EPS)(outputs + attn2)
+    out = Dense(UNITS, activation='relu')(attn2)
+    out = Dense(D_MODEL)(out)
+    out = Dropout(DROPOUT)(out)
+    out = LayerNormalization(epsilon = EPS)(out + attn2)
 
     return Model(
-        inputs = [inputs, enc_outputs, look_ahead_mask, padding_mask],
-        outputs=outputs,
-        name=name)
+        inputs = [inp, enc_out, look_ahead_mask, padding_mask],
+        outputs = out,
+        name = name)
 
 def decoder():
     inputs = Input(shape = (None,), name = 'inputs')
@@ -260,8 +239,9 @@ def decoder():
     padding_mask = tf.keras.Input(shape = (1, 1, None),
                                   name = 'padding_mask')
 
+    d_model_f32 = tf.cast(D_MODEL, tf.float32)
     embeddings = Embedding(VOCAB_SIZE, D_MODEL)(inputs)
-    embeddings *= tf.math.sqrt(tf.cast(D_MODEL, tf.float32))
+    embeddings *= d_model_f32
     embeddings = PositionalEncoding()(embeddings)
 
     outputs = Dropout(DROPOUT)(embeddings)
