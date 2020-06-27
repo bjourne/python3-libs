@@ -93,26 +93,30 @@ def select_strategy():
 # Transformer definition
 ########################################################################
 def scaled_dot_prod_attn(q, k, v, m):
-    """Calculate the attention weights. """
+    """
+    Calculate the attention weights. Implements the formula:
+
+        softmax(m*q*k^t/sqrt(d_k))*V,
+
+    where m is masking out padding tokens. Shapes:
+
+        m: (1, 1, 1, s)
+    """
     assert m is not None
     matmul_qk = tf.matmul(q, k, transpose_b = True)
 
     # scale matmul_qk
     depth = tf.cast(tf.shape(k)[-1], tf.float32)
     logits = matmul_qk / tf.math.sqrt(depth)
-
-    # add the mask to zero out padding tokens
-    if m is not None:
-        logits += (m * -1e9)
+    logits += (m * -1e9)
 
     # softmax is normalized on the last axis (seq_len_k)
-    attn_weights = softmax(logits, axis=-1)
+    attn_weights = softmax(logits, axis = -1)
 
     return tf.matmul(attn_weights, v)
 
 def create_padding_mask(x):
     mask = tf.cast(tf.math.equal(x, 0), tf.float32)
-    # (batch_size, 1, 1, sequence length)
     return mask[:, tf.newaxis, tf.newaxis, :]
 
 def create_look_ahead_mask(x):
@@ -122,20 +126,21 @@ def create_look_ahead_mask(x):
     padding_mask = create_padding_mask(x)
     return tf.maximum(look_ahead_mask, padding_mask)
 
+def get_angles(position, i):
+    d_model_f32 = tf.cast(D_MODEL, tf.float32)
+    angles = 1 / tf.pow(10000, (2 * (i // 2)) / d_model_f32)
+    return position * angles
+
 class PositionalEncoding(Layer):
     def __init__(self):
         super(PositionalEncoding, self).__init__()
         self.pos_encoding = self.positional_encoding()
 
-    def get_angles(self, position, i):
-        d_model_f32 = tf.cast(D_MODEL, tf.float32)
-        angles = 1 / tf.pow(10000, (2 * (i // 2)) / d_model_f32)
-        return position * angles
-
     def positional_encoding(self):
-        angle_rads = self.get_angles(
+        angle_rads = get_angles(
             tf.range(VOCAB_SIZE, dtype = tf.float32)[:, tf.newaxis],
             tf.range(D_MODEL, dtype = tf.float32)[tf.newaxis, :])
+
         # Apply sin and cos to every other index.
         sines = tf.math.sin(angle_rads[:, 0::2])
         cosines = tf.math.cos(angle_rads[:, 1::2])
@@ -159,7 +164,7 @@ class MultiHeadAttention(Layer):
         depth = D_MODEL // N_HEADS
         inputs = tf.reshape(
             inputs, shape = (batch_size, -1, N_HEADS, depth))
-        return tf.transpose(inputs, perm=[0, 2, 1, 3])
+        return tf.transpose(inputs, perm = [0, 2, 1, 3])
 
     def call(self, q, k, v, m):
         batch_size = tf.shape(q)[0]
@@ -241,7 +246,8 @@ def decoder():
     out = Dropout(DROPOUT)(emb)
 
     for i in range(N_LAYERS):
-        out = decoder_layer()(inputs = [out, enc_outputs,
+        out = decoder_layer()(inputs = [out,
+                                        enc_outputs,
                                         look_ahead_mask,
                                         padding_mask])
 
@@ -251,30 +257,28 @@ def decoder():
         name = 'decoder')
 
 def transformer():
-    inputs = Input(shape=(None,), name = 'inputs')
-    dec_inputs = Input(shape=(None,), name = 'dec_inputs')
+    inp = Input(shape=(None,), name = 'inputs')
+    dec_inp = Input(shape=(None,), name = 'dec_inputs')
 
     enc_padding_mask = Lambda(
         create_padding_mask, output_shape=(1, 1, None),
-        name = 'enc_padding_mask')(inputs)
+        name = 'enc_padding_mask')(inp)
     look_ahead_mask = Lambda(
         create_look_ahead_mask,
         output_shape = (1, None, None),
-        name = 'look_ahead_mask')(dec_inputs)
+        name = 'look_ahead_mask')(dec_inp)
     dec_padding_mask = Lambda(
         create_padding_mask,
         output_shape = (1, 1, None),
-        name = 'dec_padding_mask')(inputs)
+        name = 'dec_padding_mask')(inp)
 
-    enc_outputs = encoder()(inputs=[inputs, enc_padding_mask])
+    enc_out = encoder()(inputs = [inp, enc_padding_mask])
+    dec_out = decoder()(inputs = [dec_inp, enc_out,
+                                  look_ahead_mask,
+                                  dec_padding_mask])
+    outputs = Dense(VOCAB_SIZE, name = 'outputs')(dec_out)
 
-    dec_outputs = decoder()(inputs = [dec_inputs,
-                                      enc_outputs,
-                                      look_ahead_mask,
-                                      dec_padding_mask])
-    outputs = Dense(VOCAB_SIZE, name = 'outputs')(dec_outputs)
-
-    return Model(inputs=[inputs, dec_inputs], outputs=outputs)
+    return Model(inputs=[inp, dec_inp], outputs=outputs)
 
 ########################################################################
 # Data processing
@@ -297,24 +301,23 @@ def preprocess_dataset():
     ds_path = Path(file_path).parent / 'cornell movie-dialogs corpus'
     movie_lines_path = ds_path / 'movie_lines.txt'
     movie_convos_path = ds_path / 'movie_conversations.txt'
+    def split_line(line):
+        return [part.strip() for part in line.split(' +++$+++ ')]
 
     with open(movie_lines_path, errors = 'ignore') as f:
         lines = f.readlines()
-    id2line = {}
-    for line in lines:
-        parts = line.replace('\n', '').split(' +++$+++ ')
-        id2line[parts[0]] = parts[4]
+    lines = [split_line(line) for line in lines]
+    id2line = {parts[0] : preprocess_line(parts[4]) for parts in lines}
 
     with open(movie_convos_path, 'r') as f:
         lines = f.readlines()
 
     X, Y = [], []
     for line in lines:
-        parts = line.replace('\n', '').split(' +++$+++ ')
-        convo = [line[1:-1] for line in parts[3][1:-1].split(', ')]
-        for i in range(len(convo) - 1):
-            x = preprocess_line(id2line[convo[i]])
-            y = preprocess_line(id2line[convo[i+1]])
+        parts = split_line(line)
+        convo = [id2line[line[1:-1]]
+                 for line in parts[3][1:-1].split(', ')]
+        for x, y in zip(convo, convo[1:]):
             X.append(x)
             Y.append(y)
     return X, Y
@@ -360,8 +363,8 @@ class CustomSchedule(LearningRateSchedule):
     def __call__(self, step):
         a1 = tf.math.rsqrt(step)
         a2 = step * (self.warmup_steps**-1.5)
-        d_model = tf.cast(D_MODEL, tf.float32)
-        return tf.math.rsqrt(d_model) * tf.math.minimum(a1, a2)
+        d_model_f32 = tf.cast(D_MODEL, tf.float32)
+        return tf.math.rsqrt(d_model_f32) * tf.math.minimum(a1, a2)
 
 ########################################################################
 # Inference
@@ -402,6 +405,7 @@ def main():
 
     strategy = select_strategy()
     with strategy.scope():
+        print('Creating the transformer.')
         model = transformer()
         lr = CustomSchedule()
         opt = Adam(lr, beta_1 = 0.9, beta_2 = 0.98,
@@ -421,7 +425,9 @@ def main():
         'Where have you been?',
         'Will this program ever work?',
         'The summer is very hot.',
-        'Say hello to my little friend.'
+        'Say hello to my little friend.',
+        "It's time to kickass and chew bubble gum and I'm "
+        "all out of bubble gum"
         ]
     for line in lines:
         evaluate(model, tokenizer, line)
