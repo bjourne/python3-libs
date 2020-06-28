@@ -32,16 +32,21 @@ Validation losses:
 """
 from docopt import docopt
 from observations import ptb
-from os import environ
+from os import cpu_count, environ
 from pathlib import Path
-from tensorflow.config import experimental_connect_to_cluster
+from tensorflow.config import (experimental_connect_to_cluster,
+                               list_logical_devices,
+                               list_physical_devices)
 from tensorflow.data import Dataset
-from tensorflow.distribute import OneDeviceStrategy
+from tensorflow.distribute import OneDeviceStrategy, get_strategy
 from tensorflow.distribute.cluster_resolver import TPUClusterResolver
 from tensorflow.distribute.experimental import TPUStrategy
 from tensorflow.keras import Model, losses, metrics
 from tensorflow.keras.layers import *
+from tensorflow.keras.losses import (SparseCategoricalCrossentropy,
+                                     categorical_crossentropy)
 from tensorflow.keras.optimizers import *
+from tensorflow.test import gpu_device_name
 from tensorflow.tpu.experimental import initialize_tpu_system
 from time import time
 import tensorflow as tf
@@ -83,9 +88,20 @@ def sequence_to_samples(seq, seq_len):
         .map(split_input_target)
 
 def select_strategy():
+    gpus = list_physical_devices('GPU')
+    print('%d GPU(s) available:' % len(gpus))
+    for gpu in gpus:
+        print('  %s' % (gpu,))
+    tpus = list_logical_devices('TPU')
+    print('%d TPU(s) available:' % len(tpus))
+    for tpu in tpus:
+        print('  %s' % (tpu,))
+    print(gpu_device_name())
     tpu_addr = environ.get('COLAB_TPU_ADDR')
     if not tpu_addr:
-        return OneDeviceStrategy(device = "/cpu:0")
+        dev = '/GPU:0' if gpus else '/CPU:0'
+        return OneDeviceStrategy(device = dev)
+    print('Connecting to TPU cluster at %s.' % tpu_addr)
     resolver = TPUClusterResolver('grpc://' + tpu_addr)
     experimental_connect_to_cluster(resolver)
     initialize_tpu_system(resolver)
@@ -165,18 +181,14 @@ def automatic_training(model, train, valid, batch_size, epochs):
     valid = valid.batch(batch_size, drop_remainder = True)
     model.fit(x = train, validation_data = valid,
               epochs = epochs,
-              verbose = 2)
+              verbose = 1)
 
-def main():
-    # Parameters.
-    args = docopt(__doc__, version = 'Char-based LM in TF 1.0')
-    batch_size = int(args['--batch-size'])
-    seq_len = int(args['--seq-len'])
-    epochs = int(args['--epochs'])
-    manual_mode = True if args['manual'] else False
+def run_training(manual_mode, batch_size, seq_len, epochs):
+    print('CPU count: %d.' % cpu_count())
 
     # Select strategy
     strategy = select_strategy()
+
 
     # Load and transform data.
     train, _, valid = ptb('./data')
@@ -199,5 +211,18 @@ def main():
     else:
         automatic_training(model, train, valid, batch_size, epochs)
 
+def main():
+    # Parameters.
+    args = docopt(__doc__, version = 'Char-based LM in TF 1.0')
+    batch_size = int(args['--batch-size'])
+    seq_len = int(args['--seq-len'])
+    epochs = int(args['--epochs'])
+    manual_mode = True if args['manual'] else False
+    run_training(manual_mode, bach_size, seq_len, epochs)
+
+def colab_main():
+    run_training(False, 32, 320, 10)
+
 if __name__ == '__main__':
-    main()
+    colab_main()
+    #main()
