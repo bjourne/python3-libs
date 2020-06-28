@@ -90,15 +90,13 @@ def select_strategy():
 # Transformer definition
 ########################################################################
 def scaled_dot_prod_attn(q, k, v, m):
-    """
+    '''
     Calculate the attention weights. Implements the formula:
 
-        softmax(m*q*k^t/sqrt(d_k))*V,
+        softmax(m*q*k^T/sqrt(d_k))*V,
 
-    where m is masking out padding tokens. Shapes:
-
-        m: (1, 1, 1, s)
-    """
+    where m is a mask of masked out positions.
+    '''
     matmul_qk = tf.matmul(q, k, transpose_b = True)
 
     # scale matmul_qk
@@ -107,9 +105,9 @@ def scaled_dot_prod_attn(q, k, v, m):
     logits += (m * -1e9)
 
     # softmax is normalized on the last axis (seq_len_k)
-    attn_weights = softmax(logits, axis = -1)
+    weights = softmax(logits, axis = -1)
 
-    return tf.matmul(attn_weights, v)
+    return tf.matmul(weights, v)
 
 def create_padding_mask(x):
     '''
@@ -134,7 +132,7 @@ def get_angles(position, i):
 
 def positional_encoding():
     angle_rads = get_angles(
-        tf.range(VOCAB_SIZE, dtype = tf.float32)[:, tf.newaxis],
+        tf.range(5000, dtype = tf.float32)[:, tf.newaxis],
         tf.range(D_MODEL, dtype = tf.float32)[tf.newaxis, :])
 
     # Apply sin and cos to every other index.
@@ -173,12 +171,10 @@ class MultiHeadAttention(Layer):
         k = self.split_heads(self.wk(k), batch_size)
         v = self.split_heads(self.wv(v), batch_size)
 
-        scaled_attn = scaled_dot_prod_attn(q, k, v, m)
-        scaled_attn = tf.transpose(scaled_attn, perm = [0, 2, 1, 3])
-
-        concat_attn = tf.reshape(scaled_attn, (batch_size, -1, D_MODEL))
-
-        return self.dense(concat_attn)
+        attn = scaled_dot_prod_attn(q, k, v, m)
+        attn = tf.transpose(attn, perm = [0, 2, 1, 3])
+        attn = tf.reshape(attn, (batch_size, -1, D_MODEL))
+        return self.dense(attn)
 
 def encoder_layer():
     inp = Input(shape = (None, D_MODEL))
@@ -234,7 +230,7 @@ def encoder():
 
 def decoder():
     inp = Input(shape = (None,))
-    enc_outputs = Input(shape = (None, D_MODEL))
+    enc_out = Input(shape = (None, D_MODEL))
     look_ahead_mask = Input(shape = (1, None, None))
     padding_mask = tf.keras.Input(shape = (1, 1, None))
 
@@ -245,29 +241,26 @@ def decoder():
 
     for i in range(N_LAYERS):
         out = decoder_layer()(inputs = [out,
-                                        enc_outputs,
+                                        enc_out,
                                         look_ahead_mask,
                                         padding_mask])
-
     return Model(
-        inputs = [inp, enc_outputs, look_ahead_mask, padding_mask],
+        inputs = [inp, enc_out, look_ahead_mask, padding_mask],
         outputs = out)
 
 def transformer():
     inp = Input(shape=(None,), name = 'inp')
     dec_inp = Input(shape=(None,), name = 'dec_inp')
 
-    enc_padding_mask = Lambda(create_padding_mask,
-                              output_shape = (1, 1, None))(inp)
-    enc_out = encoder()(inputs = [inp, enc_padding_mask])
+    padding_mask = Lambda(create_padding_mask,
+                          output_shape = (1, 1, None))(inp)
+    enc_out = encoder()(inputs = [inp, padding_mask])
 
     look_ahead_mask = Lambda(create_look_ahead_mask,
                              output_shape = (1, None, None))(dec_inp)
-    dec_padding_mask = Lambda(create_padding_mask,
-                              output_shape = (1, 1, None))(inp)
     dec_out = decoder()(inputs = [dec_inp, enc_out,
                                   look_ahead_mask,
-                                  dec_padding_mask])
+                                  padding_mask])
     outputs = Dense(VOCAB_SIZE, name = 'out')(dec_out)
 
     return Model(inputs=[inp, dec_inp], outputs=outputs)
@@ -287,8 +280,7 @@ def preprocess_line(line):
     return line.strip()
 
 def preprocess_dataset():
-    file_name = 'dialogs.zip'
-    file_path = get_file(file_name, origin = url, extract = True)
+    file_path = get_file('dialogs.zip', origin = url, extract = True)
     ds_path = Path(file_path).parent / 'cornell movie-dialogs corpus'
     movie_lines_path = ds_path / 'movie_lines.txt'
     movie_convos_path = ds_path / 'movie_conversations.txt'
@@ -304,7 +296,7 @@ def preprocess_dataset():
         lines = f.readlines()
 
     X, Y = [], []
-    for line in lines[:500]:
+    for line in lines:
         parts = split_line(line)
         convo = [id2line[line[1:-1]]
                  for line in parts[3][1:-1].split(', ')]
