@@ -53,6 +53,7 @@ ADAM_EPS = 1e-9
 
 # Hidden units. Corresponds to "dff" I think.
 UNITS = 512
+DEPTH = D_MODEL // N_HEADS
 
 DROPOUT = 0.1
 
@@ -99,8 +100,8 @@ def scaled_dot_prod_attn(q, k, v, m):
     matmul_qk = tf.matmul(q, k, transpose_b = True)
 
     # scale matmul_qk
-    depth = tf.cast(tf.shape(k)[-1], tf.float32)
-    logits = matmul_qk / tf.math.sqrt(depth)
+    depth_f32 = tf.cast(DEPTH, tf.float32)
+    logits = matmul_qk / tf.math.sqrt(depth_f32)
     logits += (m * -1e9)
 
     # softmax is normalized on the last axis (seq_len_k)
@@ -124,26 +125,18 @@ def create_look_ahead_mask(x):
     padding_mask = create_padding_mask(x)
     return tf.maximum(look_ahead_mask, padding_mask)
 
-def get_angles(pos, i):
+def positional_encoding():
+    pos = tf.range(5000, dtype = tf.float32)[:, tf.newaxis]
+    i = tf.range(D_MODEL, dtype = tf.float32)[tf.newaxis, :]
     d_model_f32 = tf.cast(D_MODEL, tf.float32)
     angles = 1 / tf.pow(10000, (2 * (i // 2)) / d_model_f32)
-    return pos * angles
+    angle_rads = pos * angles
 
-def positional_encoding():
-    angle_rads = get_angles(
-        tf.range(5000, dtype = tf.float32)[:, tf.newaxis],
-        tf.range(D_MODEL, dtype = tf.float32)[tf.newaxis, :])
-
-    # Apply sin and cos to every other index.
     sines = tf.math.sin(angle_rads[:, 0::2])
     cosines = tf.math.cos(angle_rads[:, 1::2])
 
     pos_encoding = tf.concat([sines, cosines], axis = -1)
-    pos_encoding = tf.expand_dims(pos_encoding, 0)
-
-    # cast necessary?
-    print('pos_encoding', pos_encoding)
-    return tf.cast(pos_encoding, tf.float32)
+    return tf.expand_dims(pos_encoding, 0)
 
 class PositionalEncoding(Layer):
     def __init__(self):
@@ -151,12 +144,10 @@ class PositionalEncoding(Layer):
         self.pos_encoding = positional_encoding()
 
     def call(self, inp):
-        return inp + self.pos_encoding[:, :tf.shape(inp)[1], :]
+        return inp + self.pos_encoding[:, :MAX_LEN, :]
 
 def split_heads(inp, batch_size):
-    print('batch size is here', batch_size)
-    depth = D_MODEL // N_HEADS
-    inp = tf.reshape(inp, (batch_size, -1, N_HEADS, depth))
+    inp = tf.reshape(inp, (batch_size, -1, N_HEADS, DEPTH))
     return tf.transpose(inp, perm = [0, 2, 1, 3])
 
 class MultiHeadAttention(Layer):
@@ -199,7 +190,7 @@ def decoder_layer():
     inp = Input(shape = (None, D_MODEL))
     enc_out = Input(shape = (None, D_MODEL))
     look_ahead_mask = Input(shape = (1, None, None))
-    padding_mask = tf.keras.Input(shape = (1, 1, None))
+    padding_mask = Input(shape = (1, 1, None))
 
     attn1 = MultiHeadAttention()(inp, inp, inp, look_ahead_mask)
     attn1 = LayerNormalization(epsilon = EPS)(attn1 + inp)
@@ -222,6 +213,7 @@ def encoder():
     inp = Input(shape = (None,))
     inp_mask = Input(shape = (1, 1, None))
 
+    # (BATCH_SIZE, SEQ_LEN, D_MODEL)
     emb = Embedding(VOCAB_SIZE, D_MODEL)(inp)
     emb *= tf.math.sqrt(tf.cast(D_MODEL, tf.float32))
     emb = PositionalEncoding()(emb)
@@ -243,8 +235,7 @@ def decoder():
     out = Dropout(DROPOUT)(emb)
 
     for i in range(N_LAYERS):
-        out = decoder_layer()(inputs = [out,
-                                        enc_out,
+        out = decoder_layer()(inputs = [out, enc_out,
                                         look_ahead_mask,
                                         padding_mask])
     return Model(
@@ -299,7 +290,7 @@ def preprocess_dataset():
         lines = f.readlines()
 
     X, Y = [], []
-    for line in lines:
+    for line in lines[:1000]:
         parts = split_line(line)
         convo = [id2line[line[1:-1]]
                  for line in parts[3][1:-1].split(', ')]
