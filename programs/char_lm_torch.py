@@ -25,8 +25,10 @@ Options:
     --hidden-size=<i>       features in the hidden state [default: 700]
 
 Validation losses:
-             best    ep10    ep20    ep50    ep100  s/e
+             best    ep10    ep20    ep50    ep100  s/e  tr-best
     trans   0.942   1.040   0.982   0.942    0.942   46
+    trans   0.986   1.189   1.094   0.989    0.989   60    0.890
+    trans   1.076   1.306   2.203   1.130    1.079
     tcn     0.955   1.055   1.002   0.969    0.955  188
     rnn     0.947   1.041   0.985   0.947    0.947   47
 
@@ -42,6 +44,22 @@ from torch.nn.utils import clip_grad_norm_, weight_norm
 from torch.optim import Adam, SGD
 import torch
 import math
+
+def generate_square_subsequent_mask(sz):
+    '''
+    generate_square_subsequent_mask(5) returns:
+
+        tensor([[0., -inf, -inf, -inf, -inf],
+                [0.,   0., -inf, -inf, -inf],
+                [0.,   0.,   0., -inf, -inf],
+                [0.,   0.,   0.,   0., -inf],
+                [0.,   0.,   0.,   0.,   0.]])
+
+    Used to ensure that the transformer doesn't look into the future.
+    '''
+    mask = 1 - torch.triu(torch.ones(sz, sz)).t()
+    mask[mask==1] = float('-inf')
+    return mask
 
 def positional_encoding(max_len, emb_size):
     '''Creates a (max_len, emb_size) tensor with precomputed values that
@@ -77,14 +95,7 @@ class TransformerModel(Module):
         self.embedding = Embedding(vocab_size, emb_size)
         self.emb_size = emb_size
         self.linear = Linear(emb_size, vocab_size)
-
         self.init_weights()
-
-    def _generate_square_subsequent_mask(self, sz):
-        mask = (torch.triu(torch.ones(sz, sz)) == 1).t()
-        mask = mask.float().masked_fill(mask == 0, float('-inf'))\
-                           .masked_fill(mask == 1, float(0.0))
-        return mask
 
     def init_weights(self):
         initrange = 0.1
@@ -94,10 +105,9 @@ class TransformerModel(Module):
 
     def forward(self, x, state):
         x = x.t()
-        if (self.x_mask is None or self.x_mask.size(0) != x.size(0)):
-            device = x.device
-            mask = self._generate_square_subsequent_mask(x.size(0))
-            mask = mask.to(device)
+        if self.x_mask is None or self.x_mask.size(0) != x.size(0):
+            mask = generate_square_subsequent_mask(x.size(0))
+            mask = mask.to(x.device)
             self.x_mask = mask
 
         x = self.embedding(x) * math.sqrt(self.emb_size)
@@ -315,7 +325,7 @@ def run_training(model_type, path,
         n_chans = [n_hidden] * (n_levels - 1) + [em_size]
         model = TCN(vocab_size, em_size, n_chans, k_size, 0.1, 0.1)
     else:
-        model = TransformerModel(vocab_size, 100, 4, 500, 4, 0.0)
+        model = TransformerModel(vocab_size, 100, 4, 500, 4, 0.1)
 
     model = model.to(dev)
 
@@ -357,7 +367,7 @@ def run_training(model_type, path,
         losses.append(loss)
 
 def colab_main():
-    run_training('trans', '.', 32, 100, 512, 320, 200, 200)
+    run_training('trans', '.', 32, 100, 700, 320, 200, 200)
 
 def main():
     args = docopt(__doc__, version = 'Char-based LM 1.0')
