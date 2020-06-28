@@ -52,7 +52,7 @@ N_HEADS = 8
 EPS = 1e-6
 ADAM_EPS = 1e-9
 
-# Hidden units
+# Hidden units. Corresponds to "dff" I think.
 UNITS = 512
 
 DROPOUT = 0.1
@@ -70,7 +70,6 @@ def select_strategy():
     print('%d GPU(s)' % len(gpus))
     for gpu in gpus:
         print('  %s' % (gpu,))
-
     tpu_addr = environ.get('COLAB_TPU_ADDR')
     if not tpu_addr:
         dev = '/GPU:0' if gpus else '/CPU:0'
@@ -81,8 +80,6 @@ def select_strategy():
     experimental_connect_to_cluster(resolver)
     initialize_tpu_system(resolver)
     strategy = TPUStrategy(resolver)
-    print('%d synced replicas.' % strategy.num_replicas_in_sync)
-
     tpus = list_logical_devices('TPU')
     print('%d TPU(s)' % len(tpus))
     for tpu in tpus:
@@ -116,13 +113,18 @@ def scaled_dot_prod_attn(q, k, v, m):
     return tf.matmul(attn_weights, v)
 
 def create_padding_mask(x):
+    '''
+    One where the tensor is equal to 0. Shapes:
+
+        x: (1, s)
+    '''
     mask = tf.cast(tf.math.equal(x, 0), tf.float32)
     return mask[:, tf.newaxis, tf.newaxis, :]
 
 def create_look_ahead_mask(x):
     seq_len = tf.shape(x)[1]
-    look_ahead_mask = 1 - tf.linalg.band_part(
-        tf.ones((seq_len, seq_len)), -1, 0)
+    ones_mat = tf.ones((seq_len, seq_len))
+    look_ahead_mask = 1 - tf.linalg.band_part(ones_mat, -1, 0)
     padding_mask = create_padding_mask(x)
     return tf.maximum(look_ahead_mask, padding_mask)
 
@@ -131,23 +133,23 @@ def get_angles(position, i):
     angles = 1 / tf.pow(10000, (2 * (i // 2)) / d_model_f32)
     return position * angles
 
+def positional_encoding():
+    angle_rads = get_angles(
+        tf.range(VOCAB_SIZE, dtype = tf.float32)[:, tf.newaxis],
+        tf.range(D_MODEL, dtype = tf.float32)[tf.newaxis, :])
+
+    # Apply sin and cos to every other index.
+    sines = tf.math.sin(angle_rads[:, 0::2])
+    cosines = tf.math.cos(angle_rads[:, 1::2])
+
+    pos_encoding = tf.concat([sines, cosines], axis=-1)
+    pos_encoding = pos_encoding[tf.newaxis, ...]
+    return tf.cast(pos_encoding, tf.float32)
+
 class PositionalEncoding(Layer):
     def __init__(self):
         super(PositionalEncoding, self).__init__()
-        self.pos_encoding = self.positional_encoding()
-
-    def positional_encoding(self):
-        angle_rads = get_angles(
-            tf.range(VOCAB_SIZE, dtype = tf.float32)[:, tf.newaxis],
-            tf.range(D_MODEL, dtype = tf.float32)[tf.newaxis, :])
-
-        # Apply sin and cos to every other index.
-        sines = tf.math.sin(angle_rads[:, 0::2])
-        cosines = tf.math.cos(angle_rads[:, 1::2])
-
-        pos_encoding = tf.concat([sines, cosines], axis=-1)
-        pos_encoding = pos_encoding[tf.newaxis, ...]
-        return tf.cast(pos_encoding, tf.float32)
+        self.pos_encoding = positional_encoding()
 
     def call(self, inputs):
         return inputs + self.pos_encoding[:, :tf.shape(inputs)[1], :]
@@ -181,14 +183,15 @@ class MultiHeadAttention(Layer):
         return self.dense(concat_attn)
 
 def encoder_layer():
-    inp = Input(shape=(None, D_MODEL), name = "inputs")
-    inp_mask = Input(shape=(1, 1, None), name = "padding_mask")
+    inp = Input(shape = (None, D_MODEL))
+    inp_mask = Input(shape = (1, 1, None))
 
     attn = MultiHeadAttention()(inp, inp, inp, inp_mask)
     attn = Dropout(DROPOUT)(attn)
     attn = LayerNormalization(epsilon = EPS)(inp + attn)
 
-    out = Dense(UNITS, activation='relu')(attn)
+    # Point-wise feed-forward
+    out = Dense(UNITS, activation = 'relu')(attn)
     out = Dense(D_MODEL)(out)
     out = Dropout(DROPOUT)(out)
     out = LayerNormalization(epsilon = EPS)(attn + out)
@@ -196,7 +199,7 @@ def encoder_layer():
     return Model(inputs = [inp, inp_mask], outputs = out)
 
 def decoder_layer():
-    inp = Input(shape = (None, D_MODEL), name = "inputs")
+    inp = Input(shape = (None, D_MODEL))
     enc_out = Input(shape = (None, D_MODEL))
     look_ahead_mask = Input(shape = (1, None, None))
     padding_mask = tf.keras.Input(shape = (1, 1, None))
@@ -208,41 +211,38 @@ def decoder_layer():
     attn2 = Dropout(DROPOUT)(attn2)
     attn2 = LayerNormalization(epsilon = EPS)(attn2 + attn1)
 
+    # Point-wise feed-forward
     out = Dense(UNITS, activation='relu')(attn2)
     out = Dense(D_MODEL)(out)
     out = Dropout(DROPOUT)(out)
-    out = LayerNormalization(epsilon = EPS)(out + attn2)
+    out = LayerNormalization(epsilon = EPS)(attn2 + out)
 
-    return Model(
-        inputs = [inp, enc_out, look_ahead_mask, padding_mask],
-        outputs = out)
+    return Model(inputs = [inp, enc_out, look_ahead_mask, padding_mask],
+                 outputs = out)
 
 def encoder():
     # Layer definitions.
-    inp = Input(shape = (None,), name = 'inputs')
-    inp_mask = Input(shape = (1, 1, None), name = "padding_mask")
+    inp = Input(shape = (None,))
+    inp_mask = Input(shape = (1, 1, None))
 
     emb = Embedding(VOCAB_SIZE, D_MODEL)(inp)
     emb *= tf.math.sqrt(tf.cast(D_MODEL, tf.float32))
     emb = PositionalEncoding()(emb)
-
     out = Dropout(DROPOUT)(emb)
+
     for _ in range(N_LAYERS):
         out = encoder_layer()([out, inp_mask])
     return Model(inputs = [inp, inp_mask], outputs = out)
 
 def decoder():
-    inp = Input(shape = (None,), name = 'inputs')
-    enc_outputs = Input(shape = (None, D_MODEL), name = 'encoder_outputs')
-    look_ahead_mask = Input(shape = (1, None, None),
-                            name = 'look_ahead_mask')
-    padding_mask = tf.keras.Input(shape = (1, 1, None),
-                                  name = 'padding_mask')
+    inp = Input(shape = (None,))
+    enc_outputs = Input(shape = (None, D_MODEL))
+    look_ahead_mask = Input(shape = (1, None, None))
+    padding_mask = tf.keras.Input(shape = (1, 1, None))
 
     emb = Embedding(VOCAB_SIZE, D_MODEL)(inp)
     emb *= tf.math.sqrt(tf.cast(D_MODEL, tf.float32))
     emb = PositionalEncoding()(emb)
-
     out = Dropout(DROPOUT)(emb)
 
     for i in range(N_LAYERS):
@@ -253,26 +253,20 @@ def decoder():
 
     return Model(
         inputs = [inp, enc_outputs, look_ahead_mask, padding_mask],
-        outputs = out,
-        name = 'decoder')
+        outputs = out)
 
 def transformer():
     inp = Input(shape=(None,), name = 'inputs')
     dec_inp = Input(shape=(None,), name = 'dec_inputs')
 
-    enc_padding_mask = Lambda(
-        create_padding_mask, output_shape=(1, 1, None),
-        name = 'enc_padding_mask')(inp)
-    look_ahead_mask = Lambda(
-        create_look_ahead_mask,
-        output_shape = (1, None, None),
-        name = 'look_ahead_mask')(dec_inp)
-    dec_padding_mask = Lambda(
-        create_padding_mask,
-        output_shape = (1, 1, None),
-        name = 'dec_padding_mask')(inp)
-
+    enc_padding_mask = Lambda(create_padding_mask,
+                              output_shape = (1, 1, None))(inp)
     enc_out = encoder()(inputs = [inp, enc_padding_mask])
+
+    look_ahead_mask = Lambda(create_look_ahead_mask,
+                             output_shape = (1, None, None))(dec_inp)
+    dec_padding_mask = Lambda(create_padding_mask,
+                              output_shape = (1, 1, None))(inp)
     dec_out = decoder()(inputs = [dec_inp, enc_out,
                                   look_ahead_mask,
                                   dec_padding_mask])
@@ -394,14 +388,15 @@ def main():
 
     print('Preprocessing dataset...')
     X, Y = preprocess_dataset()
-    print('Got %d pairs.' % len(X))
-    print('Building tokenizer...')
+    print('%d pairs, building tokenizer...' % len(X))
     cls = features.text.SubwordTextEncoder
     tokenizer = cls.build_from_corpus(X + Y, target_vocab_size = 2**13)
     VOCAB_SIZE = tokenizer.vocab_size + 2
 
     print('Vocab size %d.' % VOCAB_SIZE)
     X, Y = tokenize_lines(tokenizer, X, Y)
+    X = pad_sequences(X, maxlen = MAX_LEN, padding = 'post')
+    Y = pad_sequences(Y, maxlen = MAX_LEN, padding = 'post')
 
     strategy = select_strategy()
     with strategy.scope():
@@ -413,8 +408,6 @@ def main():
         model.compile(optimizer = opt, loss = loss_fn, metrics = [acc_fn])
         model.summary()
 
-    X = pad_sequences(X, maxlen = MAX_LEN, padding = 'post')
-    Y = pad_sequences(Y, maxlen = MAX_LEN, padding = 'post')
     pairs = ({'inputs' : X, 'dec_inputs' : Y[:, :-1]},
              {'outputs' : Y[:,1:]})
     ds = Dataset.from_tensor_slices(pairs) \
