@@ -99,7 +99,6 @@ def scaled_dot_prod_attn(q, k, v, m):
 
         m: (1, 1, 1, s)
     """
-    assert m is not None
     matmul_qk = tf.matmul(q, k, transpose_b = True)
 
     # scale matmul_qk
@@ -164,8 +163,7 @@ class MultiHeadAttention(Layer):
 
     def split_heads(self, inputs, batch_size):
         depth = D_MODEL // N_HEADS
-        inputs = tf.reshape(
-            inputs, shape = (batch_size, -1, N_HEADS, depth))
+        inputs = tf.reshape(inputs, (batch_size, -1, N_HEADS, depth))
         return tf.transpose(inputs, perm = [0, 2, 1, 3])
 
     def call(self, q, k, v, m):
@@ -256,8 +254,8 @@ def decoder():
         outputs = out)
 
 def transformer():
-    inp = Input(shape=(None,), name = 'inputs')
-    dec_inp = Input(shape=(None,), name = 'dec_inputs')
+    inp = Input(shape=(None,), name = 'inp')
+    dec_inp = Input(shape=(None,), name = 'dec_inp')
 
     enc_padding_mask = Lambda(create_padding_mask,
                               output_shape = (1, 1, None))(inp)
@@ -270,7 +268,7 @@ def transformer():
     dec_out = decoder()(inputs = [dec_inp, enc_out,
                                   look_ahead_mask,
                                   dec_padding_mask])
-    outputs = Dense(VOCAB_SIZE, name = 'outputs')(dec_out)
+    outputs = Dense(VOCAB_SIZE, name = 'out')(dec_out)
 
     return Model(inputs=[inp, dec_inp], outputs=outputs)
 
@@ -286,8 +284,7 @@ def preprocess_line(line):
     line = sub(r"([?.!,])", r" \1 ", line)
     line = sub(r'[" "]+', " ", line)
     line = sub(r"[^a-zA-Z?.!,]+", " ", line)
-    line = line.strip()
-    return line
+    return line.strip()
 
 def preprocess_dataset():
     file_name = 'dialogs.zip'
@@ -307,7 +304,7 @@ def preprocess_dataset():
         lines = f.readlines()
 
     X, Y = [], []
-    for line in lines:
+    for line in lines[:500]:
         parts = split_line(line)
         convo = [id2line[line[1:-1]]
                  for line in parts[3][1:-1].split(', ')]
@@ -336,7 +333,7 @@ def tokenize_lines(tokenizer, X, Y):
 # Training settings
 ########################################################################
 def loss_fn(y_true, y_pred):
-    y_true = tf.reshape(y_true, shape = (-1, y_true.shape[1]))
+    y_true = tf.reshape(y_true, (-1, y_true.shape[1]))
     loss = losses.SparseCategoricalCrossentropy(
         from_logits = True, reduction = 'none')(y_true, y_pred)
 
@@ -346,7 +343,7 @@ def loss_fn(y_true, y_pred):
     return tf.reduce_mean(loss)
 
 def acc_fn(y_true, y_pred):
-    y_true = tf.reshape(y_true, shape = (-1, y_true.shape[1]))
+    y_true = tf.reshape(y_true, (-1, y_true.shape[1]))
     return metrics.sparse_categorical_accuracy(y_true, y_pred)
 
 class CustomSchedule(LearningRateSchedule):
@@ -408,10 +405,8 @@ def main():
         model.compile(optimizer = opt, loss = loss_fn, metrics = [acc_fn])
         model.summary()
 
-    pairs = ({'inputs' : X, 'dec_inputs' : Y[:, :-1]},
-             {'outputs' : Y[:,1:]})
+    pairs = ({'inp' : X, 'dec_inp' : Y[:, :-1]}, {'out' : Y[:,1:]})
     ds = Dataset.from_tensor_slices(pairs) \
-                .shuffle(10000) \
                 .batch(BATCH_SIZE, drop_remainder = True)
 
     lines = [
