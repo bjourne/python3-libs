@@ -26,7 +26,6 @@ from tensorflow.distribute import OneDeviceStrategy
 from tensorflow.distribute.cluster_resolver import TPUClusterResolver
 from tensorflow.distribute.experimental import TPUStrategy
 from tensorflow.keras import Input, Model
-from tensorflow.keras.backend import clear_session
 from tensorflow.keras.layers import *
 from tensorflow.keras import losses, metrics
 from tensorflow.keras.optimizers import *
@@ -125,10 +124,10 @@ def create_look_ahead_mask(x):
     padding_mask = create_padding_mask(x)
     return tf.maximum(look_ahead_mask, padding_mask)
 
-def get_angles(position, i):
+def get_angles(pos, i):
     d_model_f32 = tf.cast(D_MODEL, tf.float32)
     angles = 1 / tf.pow(10000, (2 * (i // 2)) / d_model_f32)
-    return position * angles
+    return pos * angles
 
 def positional_encoding():
     angle_rads = get_angles(
@@ -139,8 +138,11 @@ def positional_encoding():
     sines = tf.math.sin(angle_rads[:, 0::2])
     cosines = tf.math.cos(angle_rads[:, 1::2])
 
-    pos_encoding = tf.concat([sines, cosines], axis=-1)
-    pos_encoding = pos_encoding[tf.newaxis, ...]
+    pos_encoding = tf.concat([sines, cosines], axis = -1)
+    pos_encoding = tf.expand_dims(pos_encoding, 0)
+
+    # cast necessary?
+    print('pos_encoding', pos_encoding)
     return tf.cast(pos_encoding, tf.float32)
 
 class PositionalEncoding(Layer):
@@ -148,8 +150,14 @@ class PositionalEncoding(Layer):
         super(PositionalEncoding, self).__init__()
         self.pos_encoding = positional_encoding()
 
-    def call(self, inputs):
-        return inputs + self.pos_encoding[:, :tf.shape(inputs)[1], :]
+    def call(self, inp):
+        return inp + self.pos_encoding[:, :tf.shape(inp)[1], :]
+
+def split_heads(inp, batch_size):
+    print('batch size is here', batch_size)
+    depth = D_MODEL // N_HEADS
+    inp = tf.reshape(inp, (batch_size, -1, N_HEADS, depth))
+    return tf.transpose(inp, perm = [0, 2, 1, 3])
 
 class MultiHeadAttention(Layer):
     def __init__(self):
@@ -159,17 +167,12 @@ class MultiHeadAttention(Layer):
         self.wv = Dense(D_MODEL)
         self.dense = Dense(D_MODEL)
 
-    def split_heads(self, inputs, batch_size):
-        depth = D_MODEL // N_HEADS
-        inputs = tf.reshape(inputs, (batch_size, -1, N_HEADS, depth))
-        return tf.transpose(inputs, perm = [0, 2, 1, 3])
-
     def call(self, q, k, v, m):
         batch_size = tf.shape(q)[0]
 
-        q = self.split_heads(self.wq(q), batch_size)
-        k = self.split_heads(self.wk(k), batch_size)
-        v = self.split_heads(self.wv(v), batch_size)
+        q = split_heads(self.wq(q), batch_size)
+        k = split_heads(self.wk(k), batch_size)
+        v = split_heads(self.wv(v), batch_size)
 
         attn = scaled_dot_prod_attn(q, k, v, m)
         attn = tf.transpose(attn, perm = [0, 2, 1, 3])
