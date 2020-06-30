@@ -8,8 +8,11 @@
      8 16   512 1024  32  .20 0.00010 29 1.068 0.960
      4 16   512 1024  32  .20 0.00010 16 1.134 1.004 0.980 0.979
      4 16   512 2048  32  .20 0.00010 18 1.086 0.979 0.968 0.968
-     4 16   512 2048  32  .25 0.00020 18 1.050 0.969 0.961
-     4 16  1024 2048  32  .25 0.00020 30 1.039 0.979
+     4 16   512 2048  32  .25 0.00020 18 1.050 0.969 0.961 0.961
+     4 16  1024 2048  32  .25 0.00020 30 1.039 0.979 0.979 0.979
+     8 16   512 2048  32  .20 0.00010 26 1.035 0.951
+     8 16   512 2048  32  .30 0.00010 26 1.090 0.957 0.946 0.946
+     8 16   512 2048  32  .40 0.00010 26 1.190 1.018 0.977 0.970
 
 Where
 
@@ -43,15 +46,15 @@ import tensorflow as tf
 
 BATCH_SIZE = 32
 SEQ_LEN = 320
-N_LAYERS = 4
-D_MODEL = 1024
+N_LAYERS = 8
+D_MODEL = 512
 UNITS = 2048
 N_HEADS = 16
 EPS = 1e-6
-DROPOUT = 0.25
+DROPOUT = 0.40
 VOCAB_SIZE = None
 DEPTH = D_MODEL // N_HEADS
-LR = 0.0002
+LR = 0.0001
 
 def pos_encoding():
     pos = tf.range(5000, dtype = tf.float32)[:, tf.newaxis]
@@ -62,13 +65,6 @@ def pos_encoding():
     cosines = tf.math.cos(angle_rads[:, 1::2])
     pos_encoding = tf.concat([sines, cosines], axis = -1)
     return tf.expand_dims(pos_encoding, 0)
-
-class PositionalEncoding(Layer):
-    def __init__(self):
-        super(PositionalEncoding, self).__init__()
-        self.pos_encoding = pos_encoding()
-    def call(self, x):
-        return x + self.pos_encoding[:, :SEQ_LEN, :]
 
 def scaled_dot_prod_attn(q, k, v, m):
     matmul_qk = tf.matmul(q, k, transpose_b = True)
@@ -90,7 +86,10 @@ def transformer():
     x = Embedding(VOCAB_SIZE, D_MODEL,
                   embeddings_initializer = random_uniform)(inp)
     x *= tf.math.sqrt(tf.cast(D_MODEL, tf.float32))
-    x = PositionalEncoding()(x)
+
+    # Hopefully this is only calculated once?
+    x = x + pos_encoding()[:, :SEQ_LEN, :]
+    # x = PositionalEncoding()(x)
     x = Dropout(DROPOUT)(x)
     batch_size = tf.shape(x)[0]
     for _ in range(N_LAYERS):
