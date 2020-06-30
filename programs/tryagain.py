@@ -13,6 +13,8 @@
      8 16   512 2048  32  .20 0.00010 26 1.035 0.951
      8 16   512 2048  32  .30 0.00010 26 1.090 0.957 0.946 0.946
      8 16   512 2048  32  .40 0.00010 26 1.190 1.018 0.977 0.970
+     8 16   512 2048  32  .25 0.00010 26 1.062 0.949 0.946 0.946
+     8 16   256 2048  32  .25 0.00010 22 1.142 0.974 0.934 0.918
 
 Where
 
@@ -47,11 +49,11 @@ import tensorflow as tf
 BATCH_SIZE = 32
 SEQ_LEN = 320
 N_LAYERS = 8
-D_MODEL = 512
+D_MODEL = 256
 UNITS = 2048
 N_HEADS = 16
 EPS = 1e-6
-DROPOUT = 0.40
+DROPOUT = 0.25
 VOCAB_SIZE = None
 DEPTH = D_MODEL // N_HEADS
 LR = 0.0001
@@ -89,7 +91,6 @@ def transformer():
 
     # Hopefully this is only calculated once?
     x = x + pos_encoding()[:, :SEQ_LEN, :]
-    # x = PositionalEncoding()(x)
     x = Dropout(DROPOUT)(x)
     batch_size = tf.shape(x)[0]
     for _ in range(N_LAYERS):
