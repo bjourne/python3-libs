@@ -1,29 +1,34 @@
 # Copyright (C) 2020 Björn Lindqvist <bjourne@gmail.com>
-'''Validation losses:
+'''Transformer validation losses:
 
-    nl nh d_mod  ffn bsz dout       lr s  ep25 ep100 ep200 best
-     8 16   512  512  32  .15 0.00004 24 1.227 1.019 0.978 0.977
-     8 16   512  512  32  .15 0.00008 24 1.097 0.977 0.972 0.972
-     8 16   512 1024  32  .15 0.00010 29 1.044 0.958
-     8 16   512 1024  32  .20 0.00010 29 1.068 0.960
-     4 16   512 1024  32  .20 0.00010 16 1.134 1.004 0.980 0.979
-     4 16   512 2048  32  .20 0.00010 18 1.086 0.979 0.968 0.968
-     4 16   512 2048  32  .25 0.00020 18 1.050 0.969 0.961 0.961
-     4 16  1024 2048  32  .25 0.00020 30 1.039 0.979 0.979 0.979
-     8 16   512 2048  32  .20 0.00010 26 1.035 0.951
-     8 16   512 2048  32  .30 0.00010 26 1.090 0.957 0.946 0.946
-     8 16   512 2048  32  .40 0.00010 26 1.190 1.018 0.977 0.970
-     8 16   512 2048  32  .25 0.00010 26 1.062 0.949 0.946 0.946
-     8 16   256 2048  32  .25 0.00010 22 1.142 0.974 0.934 0.918
-     8 16   128 2048  32  .25 0.00010 19 1.286 1.051 0.999 0.962
-     8 16   128 2048  32  .25 0.00020 19 1.140 0.998 0.966 0.952
-     8 16   256 2048  32  .25 0.00020 21
+    nl nh dmod  ffn bsz dout       lr s  ep25 ep100 ep200 best
+     8 16  512  512  32  .15 0.00004 24 1.227 1.019 0.978 0.977
+     8 16  512  512  32  .15 0.00008 24 1.097 0.977 0.972 0.972
+     8 16  512 1024  32  .15 0.00010 29 1.044 0.958
+     8 16  512 1024  32  .20 0.00010 29 1.068 0.960
+     4 16  512 1024  32  .20 0.00010 16 1.134 1.004 0.980 0.979
+     4 16  512 2048  32  .20 0.00010 18 1.086 0.979 0.968 0.968
+     4 16  512 2048  32  .25 0.00020 18 1.050 0.969 0.961 0.961
+     4 16 1024 2048  32  .25 0.00020 30 1.039 0.979 0.979 0.979
+     8 16  512 2048  32  .20 0.00010 26 1.035 0.951
+     8 16  512 2048  32  .30 0.00010 26 1.090 0.957 0.946 0.946
+     8 16  512 2048  32  .40 0.00010 26 1.190 1.018 0.977 0.970
+     8 16  512 2048  32  .25 0.00010 26 1.062 0.949 0.946 0.946
+     8 16  256 2048  32  .25 0.00010 22 1.142 0.974 0.934 0.918
+     8 16  128 2048  32  .25 0.00010 19 1.286 1.051 0.999 0.962
+     8 16  128 2048  32  .25 0.00020 19 1.140 0.998 0.966 0.952
+     8 16  256 2048  32  .25 0.00020 21 1.056 0.944 0.922 0.912 ft 0.910
+     8 16  256 2048  32  .25 0.00030 21 1.151 1.017 0.981 0.972
+    12 16  256 2048  32  .25 0.00020 27 2.291
+    12 16  256 2048  32  .25 0.00010 27 1.670 0.976 0.932 0.925
+     8 16  192 2048  32  .25 0.00020 21 1.083 0.958 0.932 0.917
+     8 16  192 2048  32  .20 0.00020 21 1.050 0.936 0.916 0.904 ft 0.902
 
 Where
 
  * nl is the number of layers,
  * nh is the number of heads,
- * d_mod is the data model,
+ * dmod is the data model,
  * ffn is the number of units in the point-wise feed forward layers,
  * bsz is the batch size,
  * dout is the dropout rate,
@@ -34,36 +39,40 @@ Where
 from os import environ
 environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+from learning.tensorflow import select_strategy
 from observations import ptb
 from pathlib import Path
-from tensorflow.config import *
 from tensorflow.data import Dataset
-from tensorflow.distribute import OneDeviceStrategy
-from tensorflow.distribute.cluster_resolver import TPUClusterResolver
-from tensorflow.distribute.experimental import TPUStrategy
 from tensorflow.keras import Input, Model
 from tensorflow.keras.callbacks import *
 from tensorflow.keras.initializers import RandomUniform
 from tensorflow.keras.layers import *
 from tensorflow.keras.optimizers import *
 from tensorflow.nn import softmax
-from tensorflow.tpu.experimental import initialize_tpu_system
 import numpy as np
 import tensorflow as tf
 
-from learning.tensorflow import select_strategy
-
+# Common params
 BATCH_SIZE = 32
 SEQ_LEN = 320
+DROPOUT = 0.15
+VOCAB_SIZE = None
+LR = 0.0002
+WEIGHTS_PATH = Path('weights6.h5')
+
+# Transformer params
 N_LAYERS = 8
-D_MODEL = 256
+D_MODEL = 192
 UNITS = 2048
 N_HEADS = 16
 EPS = 1e-6
-DROPOUT = 0.25
-VOCAB_SIZE = None
 DEPTH = D_MODEL // N_HEADS
-LR = 0.0002
+
+# LSTM params
+LSTM1_UNITS = 512
+LSTM2_UNITS = 512
+REC_DROPOUT = 0.25
+EMB_SIZE = 100
 
 def pos_encoding():
     pos = tf.range(5000, dtype = tf.float32)[:, tf.newaxis]
@@ -129,10 +138,26 @@ def transformer():
               kernel_initializer = random_uniform)(x)
     return Model(inputs = inp, outputs = x)
 
+def lstm():
+    inp = Input(
+        shape = (None,),
+        batch_size = batch_size,
+        dtype = tf.int32)
+    embedding = Embedding(VOCAB_SIZE, EMB_SIZE)
+    LSTM(LSTM1_UNITS, return_sequences = True,
+         dropout = DROPOUT,
+         recurrent_dropout = REC_DROPOUT)
+    LSTM(LSTM2_UNITS, return_sequences = True,
+         dropout = DROPOUT,
+         recurrent_dropout = REC_DROPOUT)
+    time_dist = TimeDistributed(Dense(VOCAB_SIZE))
+    x = time_dist(lstm2(lstm1(embedding(inp))))
+    return Model(inputs = inp, outputs = x)
+
 def sequence_to_samples(seq):
     def split_input_target(chunk):
         return chunk[:-1], chunk[1:]
-    src = tf.constant(seq, dtype = tf.int32)
+    src = tf.constant(seq, tf.int32)
     return Dataset.from_tensor_slices(src) \
         .batch(SEQ_LEN + 1, drop_remainder = True) \
         .map(split_input_target) \
@@ -146,22 +171,14 @@ with select_strategy().scope():
     model.compile(optimizer = RMSprop(learning_rate = LR),
                   loss = 'sparse_categorical_crossentropy',
                   metrics = ['sparse_categorical_accuracy'])
-def split_input_target(chunk):
-    return chunk[:-1], chunk[1:]
 train = sequence_to_samples([ch2ix[c] for c in train])
 valid = sequence_to_samples([ch2ix[c] for c in valid])
-model.summary()
-
-weights_path = Path('weights.h5')
-if weights_path.exists():
-    model.load_weights(str(weights_path))
-
-cb_best = ModelCheckpoint(
-    str(weights_path),
-    monitor = 'val_loss',
-    verbose = 1,
-    save_weights_only = True,
-    save_best_only = True,
-    mode = 'min')
+if WEIGHTS_PATH.exists():
+    model.load_weights(str(WEIGHTS_PATH))
+cb_best = ModelCheckpoint(str(WEIGHTS_PATH),
+                          verbose = 1,
+                          save_weights_only = True,
+                          save_best_only = True,
+                          mode = 'min')
 model.fit(x = train, validation_data = valid, epochs = 500,
-          callbacks = [cb_best])
+          verbose = 2, callbacks = [cb_best])
