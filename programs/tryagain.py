@@ -15,6 +15,9 @@
      8 16   512 2048  32  .40 0.00010 26 1.190 1.018 0.977 0.970
      8 16   512 2048  32  .25 0.00010 26 1.062 0.949 0.946 0.946
      8 16   256 2048  32  .25 0.00010 22 1.142 0.974 0.934 0.918
+     8 16   128 2048  32  .25 0.00010 19 1.286 1.051 0.999 0.962
+     8 16   128 2048  32  .25 0.00020 19 1.140 0.998 0.966 0.952
+     8 16   256 2048  32  .25 0.00020 21
 
 Where
 
@@ -32,12 +35,14 @@ from os import environ
 environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 from observations import ptb
+from pathlib import Path
 from tensorflow.config import *
 from tensorflow.data import Dataset
 from tensorflow.distribute import OneDeviceStrategy
 from tensorflow.distribute.cluster_resolver import TPUClusterResolver
 from tensorflow.distribute.experimental import TPUStrategy
 from tensorflow.keras import Input, Model
+from tensorflow.keras.callbacks import *
 from tensorflow.keras.initializers import RandomUniform
 from tensorflow.keras.layers import *
 from tensorflow.keras.optimizers import *
@@ -45,6 +50,8 @@ from tensorflow.nn import softmax
 from tensorflow.tpu.experimental import initialize_tpu_system
 import numpy as np
 import tensorflow as tf
+
+from learning.tensorflow import select_strategy
 
 BATCH_SIZE = 32
 SEQ_LEN = 320
@@ -56,7 +63,7 @@ EPS = 1e-6
 DROPOUT = 0.25
 VOCAB_SIZE = None
 DEPTH = D_MODEL // N_HEADS
-LR = 0.0001
+LR = 0.0002
 
 def pos_encoding():
     pos = tf.range(5000, dtype = tf.float32)[:, tf.newaxis]
@@ -122,27 +129,6 @@ def transformer():
               kernel_initializer = random_uniform)(x)
     return Model(inputs = inp, outputs = x)
 
-def select_strategy():
-    gpus = list_physical_devices('GPU')
-    print('%d GPU(s)' % len(gpus))
-    for gpu in gpus:
-        print('  %s' % (gpu,))
-    tpu_addr = environ.get('COLAB_TPU_ADDR')
-    if not tpu_addr:
-        dev = '/GPU:0' if gpus else '/CPU:0'
-        print('No TPU, using %s instead.' % dev)
-        return OneDeviceStrategy(device = dev)
-    print('TPU address: %s' % tpu_addr)
-    resolver = TPUClusterResolver('grpc://' + tpu_addr)
-    experimental_connect_to_cluster(resolver)
-    initialize_tpu_system(resolver)
-    strategy = TPUStrategy(resolver)
-    tpus = list_logical_devices('TPU')
-    print('%d TPU(s)' % len(tpus))
-    for tpu in tpus:
-        print('  %s' % (tpu,))
-    return strategy
-
 def sequence_to_samples(seq):
     def split_input_target(chunk):
         return chunk[:-1], chunk[1:]
@@ -165,4 +151,17 @@ def split_input_target(chunk):
 train = sequence_to_samples([ch2ix[c] for c in train])
 valid = sequence_to_samples([ch2ix[c] for c in valid])
 model.summary()
-model.fit(x = train, validation_data = valid, epochs = 500)
+
+weights_path = Path('weights.h5')
+if weights_path.exists():
+    model.load_weights(str(weights_path))
+
+cb_best = ModelCheckpoint(
+    str(weights_path),
+    monitor = 'val_loss',
+    verbose = 1,
+    save_weights_only = True,
+    save_best_only = True,
+    mode = 'min')
+model.fit(x = train, validation_data = valid, epochs = 500,
+          callbacks = [cb_best])
