@@ -23,6 +23,7 @@
     12 16  256 2048  32  .25 0.00010 27 1.670 0.976 0.932 0.925
      8 16  192 2048  32  .25 0.00020 21 1.083 0.958 0.932 0.917
      8 16  192 2048  32  .20 0.00020 21 1.050 0.936 0.916 0.904 ft 0.902
+     8 16  192 2048  32  .15 0.00020 23 1.031 0.939 0.921 0.917
 
 Where
 
@@ -38,10 +39,10 @@ Where
 '''
 from os import environ
 environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
 from learning.tensorflow import select_strategy
 from observations import ptb
 from pathlib import Path
+from random import randrange
 from tensorflow.data import Dataset
 from tensorflow.keras import Input, Model
 from tensorflow.keras.callbacks import *
@@ -49,6 +50,8 @@ from tensorflow.keras.initializers import RandomUniform
 from tensorflow.keras.layers import *
 from tensorflow.keras.optimizers import *
 from tensorflow.nn import softmax
+from tqdm import trange
+
 import numpy as np
 import tensorflow as tf
 
@@ -58,7 +61,8 @@ SEQ_LEN = 320
 DROPOUT = 0.15
 VOCAB_SIZE = None
 LR = 0.0002
-WEIGHTS_PATH = Path('weights6.h5')
+WEIGHTS_PATH = Path('~/tryagain.h5').expanduser()
+MODE = 'generation'
 
 # Transformer params
 N_LAYERS = 8
@@ -163,22 +167,66 @@ def sequence_to_samples(seq):
         .map(split_input_target) \
         .batch(BATCH_SIZE, drop_remainder = True)
 
-train, _, valid = ptb('./data')
-ch2ix = {c : i for i, c in enumerate(sorted(set(train)))}
-VOCAB_SIZE = len(ch2ix)
-with select_strategy().scope():
+def train_model(train, valid):
+    with select_strategy().scope():
+        model = transformer()
+        model.compile(optimizer = RMSprop(learning_rate = LR),
+                      loss = 'sparse_categorical_crossentropy',
+                      metrics = ['sparse_categorical_accuracy'])
+    train = sequence_to_samples(train)
+    valid = sequence_to_samples(valid)
+    if WEIGHTS_PATH.exists():
+        model.load_weights(str(WEIGHTS_PATH))
+    cb_best = ModelCheckpoint(str(WEIGHTS_PATH),
+                              verbose = 1,
+                              save_weights_only = True,
+                              save_best_only = True,
+                              mode = 'min')
+    model.fit(x = train, validation_data = valid, epochs = 500,
+              verbose = 2, callbacks = [cb_best])
+
+def generate_text():
     model = transformer()
-    model.compile(optimizer = RMSprop(learning_rate = LR),
-                  loss = 'sparse_categorical_crossentropy',
-                  metrics = ['sparse_categorical_accuracy'])
-train = sequence_to_samples([ch2ix[c] for c in train])
-valid = sequence_to_samples([ch2ix[c] for c in valid])
-if WEIGHTS_PATH.exists():
     model.load_weights(str(WEIGHTS_PATH))
-cb_best = ModelCheckpoint(str(WEIGHTS_PATH),
-                          verbose = 1,
-                          save_weights_only = True,
-                          save_best_only = True,
-                          mode = 'min')
-model.fit(x = train, validation_data = valid, epochs = 500,
-          verbose = 2, callbacks = [cb_best])
+
+    idx = randrange(len(VALID) - SEQ_LEN)
+    seed = np.array(VALID[idx : idx + SEQ_LEN])
+    seed = np.expand_dims(seed, 0)
+    top_p = 0.95
+
+    ixs = []
+    for _ in range(5000):
+        P = model.predict(seed)[:, -1, :][0]
+
+        prob_ixs = np.argsort(-P)
+        PC = np.cumsum(P[prob_ixs])
+        top_n = len(PC[PC <= top_p]) + 1
+        surv_ixs = prob_ixs[:top_n]
+        kill_ixs = prob_ixs[top_n:]
+
+        P[kill_ixs] = 0.0
+        P = P / P.sum()
+
+        s1 = ''.join(IX2CH[ix] for ix in seed[0][-20:])
+        s2 = ' '.join('%s %.2f' % (IX2CH[ix], P[ix]) for ix in surv_ixs)
+        ix = np.random.choice(len(P), p = P)
+        s3 = IX2CH[ix]
+        print('%s | %s | %s' % (s1, s2, s3))
+
+        seed = np.roll(seed, -1, axis = 1)
+        seed[:, -1] = ix
+        ixs.append(ix)
+    s = ''.join(IX2CH[ix] for ix in ixs)
+    print('RESULT: %s' % s)
+
+train, _, valid = ptb('./data')
+CH2IX = {c : i for i, c in enumerate(sorted(set(train)))}
+IX2CH = {i : c for c, i in CH2IX.items()}
+TRAIN = [CH2IX[c] for c in train]
+VALID = [CH2IX[c] for c in valid]
+VOCAB_SIZE = len(CH2IX)
+
+if MODE == 'training':
+    train_model()
+else:
+    generate_text()
