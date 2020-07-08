@@ -39,7 +39,7 @@ Where
 '''
 from os import environ
 environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-from learning.tensorflow import select_strategy
+from learning.tensorflow import select_strategy, skew_top_p
 from observations import ptb
 from pathlib import Path
 from random import randrange
@@ -198,14 +198,8 @@ def generate_text():
     for _ in range(5000):
         P = model.predict(seed)[:, -1, :][0]
 
-        prob_ixs = np.argsort(-P)
-        PC = np.cumsum(P[prob_ixs])
-        top_n = len(PC[PC <= top_p]) + 1
-        surv_ixs = prob_ixs[:top_n]
-        kill_ixs = prob_ixs[top_n:]
-
-        P[kill_ixs] = 0.0
-        P = P / P.sum()
+        P = skew_top_p(P, top_p)
+        surv_ixs = np.where(P != 0)[0]
 
         s1 = ''.join(IX2CH[ix] for ix in seed[0][-20:])
         s2 = ' '.join('%s %.2f' % (IX2CH[ix], P[ix]) for ix in surv_ixs)

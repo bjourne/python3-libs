@@ -8,6 +8,7 @@ from tensorflow.distribute import OneDeviceStrategy
 from tensorflow.distribute.cluster_resolver import TPUClusterResolver
 from tensorflow.distribute.experimental import TPUStrategy
 from tensorflow.tpu.experimental import initialize_tpu_system
+import numpy as np
 
 def select_strategy():
     '''Selects an appropriate execution strategy based on available
@@ -31,3 +32,15 @@ def select_strategy():
     for tpu in tpus:
         print('  %s' % (tpu,))
     return strategy
+
+def skew_top_p(P, top_p):
+    '''
+    Skew a probability distribution using nucleus sampling.
+    '''
+    prob_ixs = np.argsort(-P)
+    PC = np.cumsum(P[prob_ixs])
+    top_n = len(PC[PC < top_p]) + 1
+
+    # Clear the prob of those who didn't make it.
+    P[prob_ixs[top_n:]] = 0.0
+    return P / P.sum()
