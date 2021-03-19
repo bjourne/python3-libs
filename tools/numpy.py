@@ -12,6 +12,8 @@ def slide_window(A, win_size, stride, padding = None):
         raise ValueError('Window size must be positive.')
     if not (0 < stride <= win_size):
         raise ValueError(f'Stride must satisfy 0 < stride <= {win_size}.')
+    if not A.base is None:
+        raise ValueError('Views cannot be slided over!')
 
     n_elems = len(A)
     if padding is not None:
