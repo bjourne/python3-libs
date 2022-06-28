@@ -1,14 +1,19 @@
-# Copyright (C) 2020 Björn Lindqvist <bjourne@gmail.com>
+# Copyright (C) 2020, 2022 Björn Lindqvist <bjourne@gmail.com>
 '''
 Machine-learning utilities for TensorFlow.
 '''
 from os import environ
 from tensorflow.config import *
-from tensorflow.distribute import OneDeviceStrategy
-from tensorflow.distribute.cluster_resolver import TPUClusterResolver
-from tensorflow.distribute.experimental import TPUStrategy
 from tensorflow.tpu.experimental import initialize_tpu_system
 import numpy as np
+
+# TensorFlow messes with imports so you have to import classes in this
+# roundabout way.
+import tensorflow as tf
+OneDeviceStrategy = tf.distribute.OneDeviceStrategy
+TPUClusterResolver = tf.distribute.cluster_resolver
+TPUStrategy = tf.distribute.experimental
+
 
 def select_strategy():
     '''Selects an appropriate execution strategy based on available
