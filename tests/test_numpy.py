@@ -1,4 +1,4 @@
-# Copyright (C) 2021 Björn Lindqvist <bjourne@gmail.com>
+# Copyright (C) 2021-2022 Björn Lindqvist <bjourne@gmail.com>
 from tools.numpy import slide_window
 import numpy as np
 
@@ -68,8 +68,6 @@ def test_big_stuff():
     I = np.nonzero(A == delim)[0]
     P = np.split(A, I)
 
-    print(P[0].flags['OWNDATA'])
-
     P = [P[0]] + [p[1:] for p in P[1:]]
     P = [np.array(p) for p in P if len(p) > 0]
     assert len(I) + sum(len(p) for p in P) == len(A)
@@ -80,5 +78,4 @@ def test_big_stuff():
     P = [slide_window(p, 50, 49, None) for p in P]
     for p in P:
         for w in p:
-            #print(delim, w)
             assert not delim in w
