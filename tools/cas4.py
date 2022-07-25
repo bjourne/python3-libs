@@ -5,6 +5,9 @@ from functools import reduce
 from math import sqrt
 from sys import exit
 
+def call(n, args):
+    return Call(Name(n), args, [])
+
 def const(v):
     return Constant(v)
 
@@ -12,9 +15,6 @@ CONST_0 = const(0)
 CONST_1 = const(1)
 CONST_N1 = const(-1)
 CONST_HALF = const(Fraction(1, 2))
-
-def call(n, args):
-    return Call(Name(n), args, [])
 
 def parse_expr(expr):
     return parse(expr).body[0].value
@@ -111,8 +111,6 @@ def mul(args):
     for arg in args:
         if type(arg) == Constant:
             v = arg.value
-            if v == 0:
-                return CONST_0
             coeff *= v
         else:
             b, e = arg, const(1)
@@ -120,10 +118,14 @@ def mul(args):
                 b, e = arg.args[0], arg.args[1]
             kvs[unparse(b)].append(e)
 
+    if coeff == 0:
+        return CONST_0
+
     factors = [const(coeff)]
     for b, e in kvs.items():
         factor = pow([parse_expr(b), add(e)])
         factors.append(factor)
+
     return filter_commute(factors, 'mul', 1)
 
 def div(args):
@@ -131,12 +133,6 @@ def div(args):
 
 def sub(args):
     return add([args[0], mul([CONST_N1, args[1]])])
-
-# def factors(tree):
-#     tp = type(tree)
-#     if tp == Call and tree.func.id == 'mul':
-#         return tree.args
-#     elif tp == Constant:
 
 def pow(args):
     l, r = args
@@ -158,9 +154,10 @@ def pow(args):
                 return l
             elif tp_l == Constant:
                 l_val = l.value
-                res = l_val ** r_val
-                if res == int(res):
-                    return const(int(res))
+                if l_val >= 0:
+                    res = l_val ** r_val
+                    if res == int(res):
+                        return const(int(res))
         else:
             if tp_l == Constant and r.value == -1:
                 return const(Fraction(1, l.value))
@@ -168,14 +165,14 @@ def pow(args):
 
 MERGERS = {Add : add, Sub: sub, Mult : mul, Pow : pow, Div : div}
 
-def merge(tree):
+def merge_int(tree):
     tp = type(tree)
     if tp == BinOp:
         merger = MERGERS[type(tree.op)]
         args = [merge(tree.left), merge(tree.right)]
         return merger(args)
     elif tp == Constant:
-        return tree
+        return const(tree.value)
     elif tp == Name:
         return tree
     elif tp == UnaryOp:
@@ -189,22 +186,47 @@ def merge(tree):
             return call(id, args)
     assert False
 
+def merge(tree):
+    ret = merge_int(tree)
+    print('%-40s => %-40s' % (unparse(tree), unparse(ret)))
+    return ret
+
 def check(output, expected):
     if output != expected:
         print('got     : %s' % (output,))
         print('expected: %s' % (expected,))
         assert False
 
+def test_const():
+    examples = [
+        (0, '0'),
+        (1, '1'),
+        (Fraction(1, 2), 'Fraction(1, 2)'),
+        (-10, '-10'),
+        (4, '4'),
+    ]
+    for input, expected in examples:
+        output = unparse(const(input))
+        check(output, expected)
+
 def test():
     exprs = [
         # Constants
+        ('4', '4'),
+        ('2**2', '4'),
+
+        ('1/2', 'Fraction(1, 2)'),
         ('2*3*4', '24'),
         ('10+20', '30'),
+        ('-2**2', '-4'),
+
         ('2**(1/2)', 'pow(2, Fraction(1, 2))'),
         ('10**2*3', '300'),
         ('(2**(1/2))**2', '2'),
         ('2**(-1)', 'Fraction(1, 2)'),
         ('1**(1/2)', '1'),
+
+        ('(-2)*(-2)', '4'),
 
         # Expansion of roots
         ('sqrt(4)', '2'),
@@ -216,6 +238,9 @@ def test():
         ('x*(3 + 4)', 'mul(7, x)'),
         ('-(-(-(x)))', 'mul(-1, x)'),
         ('x + 0', 'x'),
+
+        # No distribution by default
+        ('x*(y + z)', 'mul(x, add(y, z))'),
 
         # Multiple variables
         ('x*y*z', 'mul(x, y, z)'),
@@ -229,6 +254,8 @@ def test():
         ('sqrt(x)**2', 'x'),
         ('sqrt(x)*sqrt(x)', 'x'),
 
+        ('sqrt(-1)*sqrt(-1)', '-1'),
+
         # Trigonometry
         ('cos(-x)', 'cos(mul(-1, x))'),
 
@@ -239,6 +266,7 @@ def test():
 
         # Pow should distribute over mul
         ('(2*x + 3*x)**2', 'mul(25, pow(x, 2))'),
+        ('sqrt((2*x + 3*x)**2)', 'mul(5, x)'),
 
         ('-3*x*8*x', 'mul(-24, pow(x, 2))'),
         ('3*x**2 - 10*x**2 + 8', 'add(8, mul(-7, pow(x, 2)))'),
@@ -271,4 +299,5 @@ def test():
         output = unparse(tree)
         check(output, expected)
 
+test_const()
 test()
